@@ -1,5 +1,6 @@
 package com.hanghae.lemonairtranscoding.service;
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -36,7 +37,7 @@ public class TranscodeService {
 	// @Value("${rtmp.server}")
 	private String address;
 
-	// @Value("${stream.directory}")
+	@Value("${stream.directory}")
 	private String path;
 
 	// 동시성 떄문에 사용
@@ -148,6 +149,7 @@ public class TranscodeService {
 	}
 
 	public Mono<Long> start(String owner){
+		log.info("streaming server 에서 transcoding server에 접근");
 		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval, TimeUnit.MINUTES);
 		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
 		if(processMap.containsKey(owner) && processMap.get(owner).isAlive()){
@@ -155,11 +157,14 @@ public class TranscodeService {
 			processMap.get(owner).destroyForcibly();
 			processMap.remove(owner);
 		}
+
 		// 파일탐색을 다시 시작
 		stopSearching.set(false);
 		String thumbnailOutputPath = Paths.get(createThumbnailPath(owner), owner + "_thumbnail_%04d.jpg").toString();
-		String command = String.format(template, address + "/" + owner, owner + "_%v/data%d.ts", owner + "_%v.m3u8", thumbnailOutputPath);
+		// String command = String.format(template, address + "/" + owner, owner + "_%v/data%d.ts", owner + "_%v.m3u8", thumbnailOutputPath);
 
+		String command = String.format("%s -i %s -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 %s/output.m3u8",
+			"C:\\Users\\sbl\\Desktop\\ffmpeg-6.1-essentials_build\\ffmpeg-6.1-essentials_build\\bin\\ffmpeg.exe", "http://localhost:1935", "C:\\Users\\sbl\\Desktop\\ffmpegoutput");
 		ProcessBuilder processBuilder = new ProcessBuilder();
 		log.info(command);
 
@@ -186,6 +191,7 @@ public class TranscodeService {
 		// 하위 프로세스 표준 I/O의 소스 및 대상을 현재 Java 프로세스와 동일하게 설정
 		processBuilder.inheritIO();
 
+		// end of Input 에러
 		return Mono
 			.fromCallable(() -> {
 				Path directory = Paths.get(path).resolve(owner);
@@ -208,8 +214,9 @@ public class TranscodeService {
 				 * 새로운 프로세스는 directory() 로 지정된 작업 디렉토리의, environment() 로
 				 * 지정된 프로세스 환경을 가지는 command() 로 지정된 커멘드와 인수를 호출
 				 */
-				return processBuilder.start();
+				return processBuilder.start(); // CreateProcess error=5, 액세스가 거부되었습니다.
 			})
+			.log("비동기 로그 실험")
 			.flatMap(process -> {
 				log.info(process.info().toString());
 				log.info(String.valueOf(process.pid()));

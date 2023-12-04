@@ -1,2 +1,5 @@
 server:
   port: 6565
+
+stream:
+  directory: C:\Users\sbl\Desktop\ffmpegoutput

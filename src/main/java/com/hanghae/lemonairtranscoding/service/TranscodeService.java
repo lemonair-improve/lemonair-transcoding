@@ -30,13 +30,13 @@ import reactor.core.scheduler.Schedulers;
 @Slf4j
 public class TranscodeService {
 
-	@Value("${ffmpeg.command}")
+	// @Value("${ffmpeg.command}")
 	private String template;
 
-	@Value("${rtmp.server}")
+	// @Value("${rtmp.server}")
 	private String address;
 
-	@Value("${stream.directory}")
+	// @Value("${stream.directory}")
 	private String path;
 
 	// 동시성 떄문에 사용

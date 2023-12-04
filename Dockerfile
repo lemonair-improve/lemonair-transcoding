@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-RUN apt-get update && apt-get install -y ffmpeg
+RUN apt update && apt install -y ffmpeg
 
 ARG JAR_FILE_PATH=build/libs/*.jar
 

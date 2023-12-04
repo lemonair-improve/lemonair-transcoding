@@ -1,7 +1,7 @@
-FROM ubuntu:22.04
+FROM ubuntu:latest
 
 
-RUN sudo add-apt-repository ppa:savoury1/ffmpeg4 && sudo add-apt-repository ppa:savoury1/ffmpeg5 && sudo apt-get update && sudo apt-get upgrade && sudo apt-get dist-upgrade && sudo apt-get install ffmpeg
+RUN apt-get -y update && apt-get install -y ffmpeg
 
 ARG JAR_FILE_PATH=build/libs/*.jar
 

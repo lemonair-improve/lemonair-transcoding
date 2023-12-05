@@ -1,6 +1,5 @@
 FROM ubuntu:latest
 
-
 RUN apt-get -y update && apt-get install -y ffmpeg
 
 ARG JAR_FILE_PATH=build/libs/*.jar

@@ -1,6 +1,5 @@
 package com.hanghae.lemonairtranscoding.service;
 
-import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -38,7 +37,14 @@ public class TranscodeService {
 	private String address;
 
 	@Value("${stream.directory}")
-	private String path;
+	private String outputPath;
+
+	@Value("${ffmpeg.directory.exe}")
+	private String ffmpegExeFilePath;
+
+	@Value("${ffmpeg.ip}")
+	private String ffmpegIp;
+
 
 	// 동시성 떄문에 사용
 	private final ConcurrentHashMap<String, Process> processMap = new ConcurrentHashMap<>();
@@ -67,7 +73,7 @@ public class TranscodeService {
 			return;
 		}
 
-		Path directoryPath = Paths.get(path);
+		Path directoryPath = Paths.get(outputPath);
 
 		try {
 			Flux<Path> dirPaths = Flux.fromStream(Files.list(directoryPath));
@@ -134,7 +140,7 @@ public class TranscodeService {
 	}
 
 	private String createThumbnailPath(String owner) {
-		Path directory = Paths.get(path).resolve(owner);
+		Path directory = Paths.get(outputPath).resolve(owner);
 
 		// "thumbnail" 폴더 생성
 		Path thumbnailDirectory = directory.resolve("thumbnail");
@@ -164,7 +170,9 @@ public class TranscodeService {
 		// String command = String.format(template, address + "/" + owner, owner + "_%v/data%d.ts", owner + "_%v.m3u8", thumbnailOutputPath);
 
 		String command = String.format("%s -i %s -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 %s/output.m3u8",
-			"C:\\Users\\sbl\\Desktop\\ffmpeg-6.1-essentials_build\\ffmpeg-6.1-essentials_build\\bin\\ffmpeg.exe", "http://localhost:1935", "C:\\Users\\sbl\\Desktop\\ffmpegoutput");
+			ffmpegExeFilePath
+			, ffmpegIp
+			, outputPath);
 		ProcessBuilder processBuilder = new ProcessBuilder();
 		log.info(command);
 
@@ -194,11 +202,11 @@ public class TranscodeService {
 		// end of Input 에러
 		return Mono
 			.fromCallable(() -> {
-				Path directory = Paths.get(path).resolve(owner);
+				Path directory = Paths.get(outputPath).resolve(owner);
 				// 경로가 폴더인지 확인
-				if (!Files.exists(Paths.get(path))) {
+				if (!Files.exists(Paths.get(outputPath))) {
 					try {
-						Files.createDirectory(Paths.get(path));
+						Files.createDirectory(Paths.get(outputPath));
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
@@ -227,7 +235,7 @@ public class TranscodeService {
 						processMap.remove(owner);
 					}
 					// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
-					Path ownerDirectory = Paths.get(path, owner);
+					Path ownerDirectory = Paths.get(outputPath, owner);
 					deleteAllTsAndJpgFiles(ownerDirectory);
 					// 파일탐색을 중지
 					stopSearching.set(true);

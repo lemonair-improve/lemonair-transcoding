@@ -1,12 +1,7 @@
-server:
-  port: 6565
-
-stream:
-  directory: C:\Users\sbl\Desktop\ffmpegoutput
-
-ffmpeg:
-  directory:
-    exe:
-      "C:\\Users\\sbl\\Desktop\\ffmpeg-6.1-essentials_build\\ffmpeg-6.1-essentials_build\\bin\\ffmpeg.exe"
-  ip:
-    "http://localhost:1935"
+spring:
+  profiles:
+    group:
+     local:
+    include:
+      - common
+    active: local

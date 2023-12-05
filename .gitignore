@@ -38,3 +38,6 @@ out/
 
 ### properties ###
 application-local.yml
+
+### ffmpegoutput ###
+.ffmpegoutput/

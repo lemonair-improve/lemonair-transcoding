@@ -1,5 +1,6 @@
 package com.hanghae.lemonairtranscoding.service;
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -169,10 +170,27 @@ public class TranscodeService {
 		String thumbnailOutputPath = Paths.get(createThumbnailPath(owner), owner + "_thumbnail_%04d.jpg").toString();
 		// String command = String.format(template, address + "/" + owner, owner + "_%v/data%d.ts", owner + "_%v.m3u8", thumbnailOutputPath);
 
-		String command = String.format("%s -i %s -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 %s/output.m3u8",
+		// -i rtmp://localhost:1935: 입력으로 사용될 RTMP 소스의 URL을 지정합니다. 여기서는 localhost의 1935 포트를 사용합니다.
+		//
+		// -c:v libx264: 비디오 스트림에 대한 비디오 코덱을 libx264로 설정합니다. libx264는 H.264 비디오 코덱을 나타냅니다.
+		//
+		// 	-c:a aac: 오디오 스트림에 대한 오디오 코덱을 aac로 설정합니다. AAC는 Advanced Audio Coding의 약자로, 오디오 압축을 위한 코덱입니다.
+		//
+		// 	-hls_time 10: HLS 세그먼트의 시간을 10초로 설정합니다. 이는 HLS 세그먼트의 길이를 나타냅니다.
+		//
+		// 	-hls_list_size 6: HLS 재생목록(.m3u8 파일)에 포함될 세그먼트의 최대 개수를 6으로 설정합니다. 새로운 세그먼트가 생성되면, 재생목록에 최대 6개까지만 유지됩니다.
+		//
+		//  C:\Users\sbl\Desktop\ffmpegoutput\byeongryeol.m3u8: HLS 스트리밍의 출력 디렉토리 및 재생목록 파일의 경로를 지정합니다. 여기서는 byeongryeol.m3u8이라는 재생목록 파일이 생성되며, 세그먼트 파일들은 해당 디렉토리에 저장됩니다.
+
+		// ffmpeg -i rtmp://localhost:1935 -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 C:\Users\sbl\Desktop\ffmpegoutput\byeongryeol.m3u8
+		String command = String.format("%s -i %s -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 %s/%s.m3u8",
 			ffmpegExeFilePath
 			, ffmpegIp
-			, outputPath);
+			, outputPath
+		,owner );
+
+
+		
 		ProcessBuilder processBuilder = new ProcessBuilder();
 		log.info(command);
 

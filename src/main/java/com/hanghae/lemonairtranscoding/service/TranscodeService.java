@@ -156,7 +156,7 @@ public class TranscodeService {
 	}
 
 	public Mono<Long> start(String owner){
-		log.info("streaming server 에서 transcoding server에 접근");
+		log.info("streaming server 에서 transcoding server에 접근 owner : " + owner);
 		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval, TimeUnit.MINUTES);
 		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
 		if(processMap.containsKey(owner) && processMap.get(owner).isAlive()){
@@ -170,9 +170,9 @@ public class TranscodeService {
 		String thumbnailOutputPath = Paths.get(createThumbnailPath(owner), owner + "_thumbnail_%04d.jpg").toString();
 		// String command = String.format(template, address + "/" + owner, owner + "_%v/data%d.ts", owner + "_%v.m3u8", thumbnailOutputPath);
 
-		// -i rtmp://localhost:1935: 입력으로 사용될 RTMP 소스의 URL을 지정합니다. 여기서는 localhost의 1935 포트를 사용합니다.
+		//  -i rtmp://localhost:1935: 입력으로 사용될 RTMP 소스의 URL을 지정합니다. 여기서는 localhost의 1935 포트를 사용합니다.
 		//
-		// -c:v libx264: 비디오 스트림에 대한 비디오 코덱을 libx264로 설정합니다. libx264는 H.264 비디오 코덱을 나타냅니다.
+		//  -c:v libx264: 비디오 스트림에 대한 비디오 코덱을 libx264로 설정합니다. libx264는 H.264 비디오 코덱을 나타냅니다.
 		//
 		// 	-c:a aac: 오디오 스트림에 대한 오디오 코덱을 aac로 설정합니다. AAC는 Advanced Audio Coding의 약자로, 오디오 압축을 위한 코덱입니다.
 		//
@@ -184,9 +184,9 @@ public class TranscodeService {
 
 		// ffmpeg -i rtmp://localhost:1935 -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 C:\Users\sbl\Desktop\ffmpegoutput\byeongryeol.m3u8
 		String command = String.format("%s -i %s -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 %s/%s.m3u8",
-			ffmpegExeFilePath
-			, ffmpegIp
-			, outputPath
+			ffmpegExeFilePath 			// TranscodingApplciation 기준 로컬의 ffmpeg 실행 파일 위치
+			, ffmpegIp + "/" + owner 	// obs studio 스트리머가 방송 송출 영상을 보내고 있는 url
+			, outputPath				// 저장될 위치, 현재는 local -> aws S3
 		,owner );
 
 

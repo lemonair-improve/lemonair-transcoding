@@ -2,6 +2,8 @@ spring:
   profiles:
     group:
      local:
+     deploy:
     include:
       - common
+      - secret
     active: local

@@ -38,3 +38,5 @@ out/
 
 ### properties ###
 application-local.yml
+application-deploy.yml
+application-secret.yml

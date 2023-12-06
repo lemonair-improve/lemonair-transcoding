@@ -34,148 +34,39 @@ import reactor.core.scheduler.Schedulers;
 @RequiredArgsConstructor
 public class TranscodeService {
 
+	private static final long delete_interval = 1L;
 	private final AwsS3Uploader s3Uploader;
-
-	// @Value("${ffmpeg.command}")
-	private String template;
-
-	@Value("${stream.directory}")
-	private String outputPath;
-
-	@Value("${ffmpeg.directory.windows}")
-	private String ffmpegExeFilePath;
-
-	@Value("${ffmpeg.ip}")
-	private String ffmpegIp;
-
-	@Value("${upload.s3}")
-	private Boolean uploadS3;
-
-
 	//썸네일에 일련번호를 부여하도록 하는 obs studio의 썸네일 생성 옵션을 이용하기 위해 _thumbnail_%04d.jpg 와 같이 정의
 	private final String THUMBNAIL_SERIAL_NUMBER_POSTFIX = "_thumbnail_%04d.jpg";
 	private final String THUMBNAIL_DATETIME_POSTFIX = "_thumbnail_%Y%m%d_%H%M%S.jpg";
-
-
 	// 동시성 떄문에 사용
 	private final ConcurrentHashMap<String, Process> processMap = new ConcurrentHashMap<>();
-	private static final long delete_interval = 1L;
 	private final ScheduledExecutorService deleteFile = Executors.newSingleThreadScheduledExecutor();
 	private final ScheduledExecutorService uploadExecutor = Executors.newSingleThreadScheduledExecutor();
 	private final AtomicBoolean stopSearching = new AtomicBoolean(true);
 	private final AtomicBoolean showMessage = new AtomicBoolean(true);
+	// @Value("${ffmpeg.command}")
+	private String template;
+	@Value("${stream.directory}")
+	private String outputPath;
+	@Value("${ffmpeg.directory.windows}")
+	private String ffmpegExeFilePath;
+	@Value("${ffmpeg.ip}")
+	private String ffmpegIp;
+	@Value("${upload.s3}")
+	private Boolean uploadS3;
 
-
-
-	private Flux<Path> walkFilesFlux(Path path) {
-		try {
-			return Flux.fromStream(Files.walk(path)
-				.filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")));
-		} catch (IOException e) {
-			log.error("Failed to walk files", e);
-			return Flux.empty();
-		}
-	}
-
-	private void deleteOldTsAndJpgFiles(String owner) {
-		if (stopSearching.get()) {
-			if (showMessage.getAndSet(false)) {
-				log.info("No longer searching for files.");
-			}
-			return;
-		}
-
-		Path directoryPath = Paths.get(outputPath);
-
-		try {
-			Flux<Path> dirPaths = Flux.fromStream(Files.list(directoryPath));
-			dirPaths.filter(Files::isDirectory)
-				.filter(dirPath -> dirPath.toFile().getName().equals(owner))
-				.flatMap(dirPath -> {
-					List<Path> filesToDelete = new ArrayList<>();
-					return walkFilesFlux(dirPath)
-						.doOnNext(file -> {
-							try {
-								BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
-								Instant currentInstant = Instant.now();
-								Instant fileCreationInstant = attributes.creationTime().toInstant();
-								final long elapsedTime = Duration.between(fileCreationInstant, currentInstant).toMinutes();
-
-								if (elapsedTime >= 1) {
-									filesToDelete.add(file);
-								}
-							} catch (IOException e) {
-								log.error("Failed to read attributes of file {}", file, e);
-							}
-						})
-						.doOnComplete(() -> {
-							for (Path file : filesToDelete) {
-								AtomicBoolean hasFiles = new AtomicBoolean(false);
-								try {
-									if (file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")) {
-										Files.deleteIfExists(file);
-										hasFiles.set(true);
-									}
-								} catch (IOException e) {
-									log.error("Failed to delete file {}", file, e);
-								}
-								if (!hasFiles.get()) {
-									stopSearching.set(true);
-								}
-							}
-						})
-						.then()
-						.subscribeOn(Schedulers.boundedElastic());
-				})
-				.subscribe();
-		} catch (IOException e) {
-			log.error("Failed to list directories", e);
-		}
-	}
-
-	// private void uploadThumbNailS3(String owner){
-	// 	Path thumbNailDirectory = Paths.get(outputPath).resolve(owner).resolve("thumbnail");
-	// 	String targetThumbNailName = owner
-	// 	if(!Files.exists(thumbNailDirectory)){
-	// 		log.error(String.format("%s 의 업로드할 썸네일이 존재하지 않습니다.", owner));
-	// 		return;
-	// 	}
-	//
-	// }
-
-	private void uploadVideoS3(String owner) {
-
-		Path videoDirectory = Paths.get(outputPath).resolve(owner).resolve("video");
-	}
-
-	// 방송종료 시 남아있는 모든 .ts 파일삭제
-	private void deleteAllTsAndJpgFiles(Path dirPath) {
-		try {
-			Files.walk(dirPath)
-				.filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg") || file.toString().endsWith(".m3u8"))
-				.forEach(file -> {
-					try {
-						Files.deleteIfExists(file);
-						log.info("File deleted: {}", file);
-					} catch (IOException e) {
-						log.error("Failed to delete file {}", file, e);
-					}
-				});
-		} catch (IOException e) {
-			log.error("Failed to walk files", e);
-		}
-	}
-
-	public Mono<Long> startTranscoding(String owner){
+	public Mono<Long> startTranscoding(String owner) {
 		log.info("streaming server 에서 transcoding server에 접근 owner : " + owner);
 
 		// 싱글 스레드 하나를 부여받아서 일정 주기마다 파일을 삭제하고있다.
 		// s3에 업로드할거면 얘 대신 해야할듯?
-		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval, TimeUnit.MINUTES);
+		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval,
+			TimeUnit.MINUTES);
 
 		// uploadExecutor.scheduleAtFixedRate(() -> this.)
 		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
-		if(processMap.containsKey(owner) && processMap.get(owner).isAlive()){
+		if (processMap.containsKey(owner) && processMap.get(owner).isAlive()) {
 			// 하위 프로세스를 종료
 			processMap.get(owner).destroyForcibly();
 			processMap.remove(owner);
@@ -185,11 +76,11 @@ public class TranscodeService {
 		stopSearching.set(false);
 
 		// owner를 위한 썸네일, 비디오 디렉토리가 없다면 생성하고 그 경로를 문자열로 반환한다.
-		String thumbnailOutputPathAndName = Paths.get(getOrCreateThumbnailPath(owner), owner + THUMBNAIL_SERIAL_NUMBER_POSTFIX).toString();
+		String thumbnailOutputPathAndName = Paths.get(getOrCreateThumbnailPath(owner),
+			owner + THUMBNAIL_SERIAL_NUMBER_POSTFIX).toString();
 		String videoOutputPath = Paths.get(getOrCreateVideoPath(owner)).toString();
-		
-		log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
 
+		log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
 
 		List<String> splitCommand = getSplitCommand(owner, videoOutputPath, thumbnailOutputPathAndName);
 		// 내장된 ffmepg에 명령을 전달할 processBuilder를
@@ -216,12 +107,19 @@ public class TranscodeService {
 				// 블로킹 IO 태스크와 같은 생명주기가 긴 태스크들에 적합하다.
 				// boundedElastic 은 요청 할때마다 스레드 생성 단, 스레드 수 제한
 			}).subscribeOn(Schedulers.boundedElastic()); // subscribeOn은 구독이 어느 스레드에서 이루어질지를 선택한다.
+
+	}
+
+	private void uploadThumbnail(String line) {
+	}
+
+	private void uploadm3u8(String line) {
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
 		// CreateProcess error=5, 액세스가 거부되었습니다. 오류 발생시 command가 잘못된 경우
 
-		
+
 		/*
 		 * 상대경로를 절대경로로 변경, processBuilder 의 작업 디렉토리를 설정
 		 * 이후, 이 객체의 start() 메서드로 시작된 서브 프로세스는 이 디렉토리를 작업 디렉토리로서 사용
@@ -272,8 +170,8 @@ public class TranscodeService {
 				+ " -strftime 1 %s/%s.m3u8 "
 				// + "-vf fps=1/10 -q:v 2 %s",
 				+ "-vf fps=1/10 -strftime 1 -q:v 2 %s",
-			ffmpegExeFilePath 			// TranscodingApplciation 기준 로컬의 ffmpeg 실행 파일 위치
-			, ffmpegIp + "/" + owner + "@gmail.com" 	// obs studio 스트리머가 방송 송출 영상을 보내고 있는 url
+			ffmpegExeFilePath            // TranscodingApplciation 기준 로컬의 ffmpeg 실행 파일 위치
+			, ffmpegIp + "/" + owner + "@gmail.com"    // obs studio 스트리머가 방송 송출 영상을 보내고 있는 url
 			, videoOutputPath            // 저장될 위치, 현재는 local -> aws S3
 			, owner
 			, thumbnailOutputPathAndName
@@ -311,7 +209,7 @@ public class TranscodeService {
 		return thumbnailDirectory.toAbsolutePath().toString();
 	}
 
-	private String getOrCreateVideoPath(String owner){
+	private String getOrCreateVideoPath(String owner) {
 		Path videoDirectory = Paths.get(outputPath).resolve(owner).resolve("videos");
 		if (!Files.exists(videoDirectory)) {
 			try {
@@ -321,5 +219,105 @@ public class TranscodeService {
 			}
 		}
 		return videoDirectory.toAbsolutePath().toString();
+	}
+
+	// private void uploadThumbNailS3(String owner){
+	// 	Path thumbNailDirectory = Paths.get(outputPath).resolve(owner).resolve("thumbnail");
+	// 	String targetThumbNailName = owner
+	// 	if(!Files.exists(thumbNailDirectory)){
+	// 		log.error(String.format("%s 의 업로드할 썸네일이 존재하지 않습니다.", owner));
+	// 		return;
+	// 	}
+	//
+	// }
+
+	private void uploadVideoS3(String owner) {
+		Path videoDirectory = Paths.get(outputPath).resolve(owner).resolve("video");
+	}
+
+	private Flux<Path> walkFilesFlux(Path path) {
+		try {
+			return Flux.fromStream(Files.walk(path)
+				.filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")));
+		} catch (IOException e) {
+			log.error("Failed to walk files", e);
+			return Flux.empty();
+		}
+	}
+
+	private void deleteOldTsAndJpgFiles(String owner) {
+		if (stopSearching.get()) {
+			if (showMessage.getAndSet(false)) {
+				log.info("No longer searching for files.");
+			}
+			return;
+		}
+
+		Path directoryPath = Paths.get(outputPath);
+
+		try {
+			Flux<Path> dirPaths = Flux.fromStream(Files.list(directoryPath));
+			dirPaths.filter(Files::isDirectory)
+				.filter(dirPath -> dirPath.toFile().getName().equals(owner))
+				.flatMap(dirPath -> {
+					List<Path> filesToDelete = new ArrayList<>();
+					return walkFilesFlux(dirPath)
+						.doOnNext(file -> {
+							try {
+								BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
+								Instant currentInstant = Instant.now();
+								Instant fileCreationInstant = attributes.creationTime().toInstant();
+								final long elapsedTime = Duration.between(fileCreationInstant, currentInstant)
+									.toMinutes();
+
+								if (elapsedTime >= 1) {
+									filesToDelete.add(file);
+								}
+							} catch (IOException e) {
+								log.error("Failed to read attributes of file {}", file, e);
+							}
+						})
+						.doOnComplete(() -> {
+							for (Path file : filesToDelete) {
+								AtomicBoolean hasFiles = new AtomicBoolean(false);
+								try {
+									if (file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")) {
+										Files.deleteIfExists(file);
+										hasFiles.set(true);
+									}
+								} catch (IOException e) {
+									log.error("Failed to delete file {}", file, e);
+								}
+								if (!hasFiles.get()) {
+									stopSearching.set(true);
+								}
+							}
+						})
+						.then()
+						.subscribeOn(Schedulers.boundedElastic());
+				})
+				.subscribe();
+		} catch (IOException e) {
+			log.error("Failed to list directories", e);
+		}
+	}
+
+	// 방송종료 시 남아있는 모든 .ts 파일삭제
+	private void deleteAllTsAndJpgFiles(Path dirPath) {
+		try {
+			Files.walk(dirPath)
+				.filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg") || file.toString()
+					.endsWith(".m3u8"))
+				.forEach(file -> {
+					try {
+						Files.deleteIfExists(file);
+						log.info("File deleted: {}", file);
+					} catch (IOException e) {
+						log.error("Failed to delete file {}", file, e);
+					}
+				});
+		} catch (IOException e) {
+			log.error("Failed to walk files", e);
+		}
 	}
 }

@@ -4,6 +4,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +14,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class ProcessBuilderLearnTest {
 
-	//subscribe 함수:
+	// subscribe 함수:
 	//
 	// subscribe 함수는 Mono나 Flux를 구독(Subscribe)하여 해당 스트림의 이벤트를 처리할 때 사용됩니다.
 	// subscribe 함수를 호출하면 Mono나 Flux의 Publisher에 구독이 시작되며, 데이터 흐름이 시작됩니다.
@@ -67,7 +69,6 @@ public class ProcessBuilderLearnTest {
 				}).start();
 			}).block();
 		System.out.println(" 블로킹되고 대기시간 3초인 경우" + (System.currentTimeMillis() - startTime));
-
 	}
 
 	ProcessBuilder powerShellProcess(Long waitMillisecond) throws InterruptedException {
@@ -78,4 +79,35 @@ public class ProcessBuilderLearnTest {
 		return processBuilder;
 	}
 
+	@Test
+	void printDetectTest(){
+		Mono.fromCallable(() -> print1to1000Process().start()).subscribeOn(Schedulers.boundedElastic())
+			.subscribe(process -> {
+				new Thread(() -> {
+					try {
+						InputStream inputStream = process.getInputStream();
+						BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+						String line;
+						while (true) {
+							line = reader.readLine();
+							System.out.println(line);
+						}
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}).start();
+
+			});
+	}
+
+	ProcessBuilder print1to1000Process(){
+		ProcessBuilder processBuilder = new ProcessBuilder();
+		// processBuilder.inheritIO();
+		StringBuilder commands = new StringBuilder();
+		for (int i = 1; i <= 100; i++) {
+			commands.append("echo ").append(i).append('\n');
+		}
+		processBuilder.command("powershell.exe", commands.toString());
+		return processBuilder;
+	}
 }

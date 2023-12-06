@@ -1,2 +1,5 @@
 server:
   port: 6565
+
+upload:
+  s3: true

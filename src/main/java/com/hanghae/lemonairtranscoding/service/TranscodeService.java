@@ -168,12 +168,12 @@ public class TranscodeService {
 				+ "-hls_time 10 "
 				+ "-hls_list_size 6 "
 				+ " -strftime 1 %s/%s.m3u8 "
-				// + "-vf fps=1/10 -q:v 2 %s",
-				+ "-vf fps=1/10 -strftime 1 -q:v 2 %s",
+				+ "-vf fps=1/10 -q:v 2 %s",
+				// + "-vf fps=1/10 -strftime 1 -q:v 2 %s",
 			ffmpegExeFilePath            // TranscodingApplciation 기준 로컬의 ffmpeg 실행 파일 위치
 			, ffmpegIp + "/" + owner + "@gmail.com"    // obs studio 스트리머가 방송 송출 영상을 보내고 있는 url
 			, videoOutputPath            // 저장될 위치, 현재는 local -> aws S3
-			, owner
+			, owner + "%Y%m%d_%H%M%S"
 			, thumbnailOutputPathAndName
 		);
 

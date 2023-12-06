@@ -39,6 +39,7 @@ public class TranscodeService {
 	//썸네일에 일련번호를 부여하도록 하는 obs studio의 썸네일 생성 옵션을 이용하기 위해 _thumbnail_%04d.jpg 와 같이 정의
 	private final String THUMBNAIL_SERIAL_NUMBER_POSTFIX = "_thumbnail_%04d.jpg";
 	private final String THUMBNAIL_DATETIME_POSTFIX = "_thumbnail_%Y%m%d_%H%M%S.jpg";
+	private final String DATETIME_POSTFIX = "%Y%m%d_%H%M%S";
 	// 동시성 떄문에 사용
 	private final ConcurrentHashMap<String, Process> processMap = new ConcurrentHashMap<>();
 	private final ScheduledExecutorService deleteFile = Executors.newSingleThreadScheduledExecutor();
@@ -60,11 +61,9 @@ public class TranscodeService {
 		log.info("streaming server 에서 transcoding server에 접근 owner : " + owner);
 
 		// 싱글 스레드 하나를 부여받아서 일정 주기마다 파일을 삭제하고있다.
-		// s3에 업로드할거면 얘 대신 해야할듯?
 		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval,
 			TimeUnit.MINUTES);
 
-		// uploadExecutor.scheduleAtFixedRate(() -> this.)
 		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
 		if (processMap.containsKey(owner) && processMap.get(owner).isAlive()) {
 			// 하위 프로세스를 종료
@@ -77,7 +76,7 @@ public class TranscodeService {
 
 		// owner를 위한 썸네일, 비디오 디렉토리가 없다면 생성하고 그 경로를 문자열로 반환한다.
 		String thumbnailOutputPathAndName = Paths.get(getOrCreateThumbnailPath(owner),
-			owner + THUMBNAIL_SERIAL_NUMBER_POSTFIX).toString();
+			owner + THUMBNAIL_DATETIME_POSTFIX).toString();
 		String videoOutputPath = Paths.get(getOrCreateVideoPath(owner)).toString();
 
 		log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
@@ -85,28 +84,27 @@ public class TranscodeService {
 		List<String> splitCommand = getSplitCommand(owner, videoOutputPath, thumbnailOutputPathAndName);
 		// 내장된 ffmepg에 명령을 전달할 processBuilder를
 		ProcessBuilder processBuilder = getTranscodingProcess(owner, splitCommand);
-		return Mono
-			.fromCallable(processBuilder::start)
-			.flatMap(process -> {
-				// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
-				process.onExit().thenAccept((c) -> {
-					// TODO: 2023-12-05 S3와 연동시 방송 종료시에 S3 안의 데이터를 어떻게 처리할지...
-					log.info(owner + " exited with code " + c.exitValue());
-					if (!processMap.get(owner).isAlive()) {
-						processMap.remove(owner);
-					}
-					// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
-					Path ownerDirectory = Paths.get(outputPath, owner);
-					deleteAllTsAndJpgFiles(ownerDirectory);
-					// 파일탐색을 중지
-					stopSearching.set(true);
-				});
-				processMap.put(owner, process);
-				// 프로세스의 기본 프로세스 ID를 반환합니다. 기본 프로세스 ID는 운영 체제가 프로세스에 할당하는 식별 번호
-				return Mono.just(process.pid());
-				// 블로킹 IO 태스크와 같은 생명주기가 긴 태스크들에 적합하다.
-				// boundedElastic 은 요청 할때마다 스레드 생성 단, 스레드 수 제한
-			}).subscribeOn(Schedulers.boundedElastic()); // subscribeOn은 구독이 어느 스레드에서 이루어질지를 선택한다.
+		return Mono.fromCallable(processBuilder::start).flatMap(process -> {
+			// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
+			process.onExit().thenAccept((c) -> {
+				// TODO: 2023-12-05 S3와 연동시 방송 종료시에 S3 안의 데이터를 어떻게 처리할지...
+				log.info(owner + " exited with code " + c.exitValue());
+				if (!processMap.get(owner).isAlive()) {
+					processMap.remove(owner);
+				}
+				// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
+				Path ownerDirectory = Paths.get(outputPath, owner);
+
+				// deleteAllTsAndJpgFiles(ownerDirectory);
+				// 파일탐색을 중지
+				stopSearching.set(true);
+			});
+			processMap.put(owner, process);
+			// 프로세스의 기본 프로세스 ID를 반환합니다. 기본 프로세스 ID는 운영 체제가 프로세스에 할당하는 식별 번호
+			return Mono.just(process.pid());
+			// 블로킹 IO 태스크와 같은 생명주기가 긴 태스크들에 적합하다.
+			// boundedElastic 은 요청 할때마다 스레드 생성 단, 스레드 수 제한
+		}).subscribeOn(Schedulers.boundedElastic()); // subscribeOn은 구독이 어느 스레드에서 이루어질지를 선택한다.
 
 	}
 
@@ -117,13 +115,6 @@ public class TranscodeService {
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
-		// CreateProcess error=5, 액세스가 거부되었습니다. 오류 발생시 command가 잘못된 경우
-
-
-		/*
-		 * 상대경로를 절대경로로 변경, processBuilder 의 작업 디렉토리를 설정
-		 * 이후, 이 객체의 start() 메서드로 시작된 서브 프로세스는 이 디렉토리를 작업 디렉토리로서 사용
-		 */
 		/*
 		 * ProcessBuilder 클래스의 인스턴스에 정의 된 속성으로 새 프로세스를 만들 수 있다
 		 * ProcessBuilder 의 속성을 사용해 새로운 프로세스를 시작합니다.
@@ -160,22 +151,16 @@ public class TranscodeService {
 		// 	-hls_list_size 6: HLS 재생목록(.m3u8 파일)에 포함될 세그먼트의 최대 개수를 6으로 설정합니다. 새로운 세그먼트가 생성되면, 재생목록에 최대 6개까지만 유지됩니다.
 		//  C:\Users\sbl\Desktop\ffmpegoutput\byeongryeol.m3u8: HLS 스트리밍의 출력 디렉토리 및 재생목록 파일의 경로를 지정합니다. 여기서는 byeongryeol.m3u8이라는 재생목록 파일이 생성되며, 세그먼트 파일들은 해당 디렉토리에 저장됩니다.
 
-		// ffmpeg -i rtmp://localhost:1935 -c:v libx264 -c:a aac -hls_time 10 -hls_list_size 6 C:\Users\sbl\Desktop\ffmpegoutput\byeongryeol.m3u8
-		String command = String.format("%s "
-				+ "-i %s "
-				+ "-c:v libx264 "
-				+ "-c:a aac "
-				+ "-hls_time 10 "
-				+ "-hls_list_size 6 "
-				+ " -strftime 1 %s/%s.m3u8 "
-				+ "-vf fps=1/10 -q:v 2 %s",
-				// + "-vf fps=1/10 -strftime 1 -q:v 2 %s",
-			ffmpegExeFilePath            // TranscodingApplciation 기준 로컬의 ffmpeg 실행 파일 위치
-			, ffmpegIp + "/" + owner + "@gmail.com"    // obs studio 스트리머가 방송 송출 영상을 보내고 있는 url
-			, videoOutputPath            // 저장될 위치, 현재는 local -> aws S3
-			, owner + "%Y%m%d_%H%M%S"
-			, thumbnailOutputPathAndName
-		);
+		String runffmpegWithStreamingUrl = String.format("%s -i %s ", ffmpegExeFilePath,
+			ffmpegIp + "/" + owner + "@gmail.com");
+		String defaultCodec = "-c:v libx264 -c:a aac "; // 기본 비디오 코덱은 libx264, 오디오 코덱은 aac
+		String hlsSegmentSetting = String.format("-hls_time %d -hls_list_size %d ", 2, 6); // .m3u8 파일에 포함될 세그먼트의 최대 개수
+		String m3u8SaveSettings = String.format("-strftime 1 %s/%s.m3u8 ", "videos",
+			owner);// -strftime 1 현재 시각을 사용하여 videos/지정한파일명.m3u8 로 저장합니다.
+		String thumbnailSaveSettings = String.format("-vf fps=1/10 -q:v 2 %s", thumbnailOutputPathAndName);
+
+		String command =
+			runffmpegWithStreamingUrl + defaultCodec + hlsSegmentSetting + m3u8SaveSettings + thumbnailSaveSettings;
 
 		log.info(command);
 
@@ -237,8 +222,8 @@ public class TranscodeService {
 
 	private Flux<Path> walkFilesFlux(Path path) {
 		try {
-			return Flux.fromStream(Files.walk(path)
-				.filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")));
+			return Flux.fromStream(
+				Files.walk(path).filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")));
 		} catch (IOException e) {
 			log.error("Failed to walk files", e);
 			return Flux.empty();
@@ -261,40 +246,35 @@ public class TranscodeService {
 				.filter(dirPath -> dirPath.toFile().getName().equals(owner))
 				.flatMap(dirPath -> {
 					List<Path> filesToDelete = new ArrayList<>();
-					return walkFilesFlux(dirPath)
-						.doOnNext(file -> {
-							try {
-								BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
-								Instant currentInstant = Instant.now();
-								Instant fileCreationInstant = attributes.creationTime().toInstant();
-								final long elapsedTime = Duration.between(fileCreationInstant, currentInstant)
-									.toMinutes();
+					return walkFilesFlux(dirPath).doOnNext(file -> {
+						try {
+							BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
+							Instant currentInstant = Instant.now();
+							Instant fileCreationInstant = attributes.creationTime().toInstant();
+							final long elapsedTime = Duration.between(fileCreationInstant, currentInstant).toMinutes();
 
-								if (elapsedTime >= 1) {
-									filesToDelete.add(file);
+							if (elapsedTime >= 1) {
+								filesToDelete.add(file);
+							}
+						} catch (IOException e) {
+							log.error("Failed to read attributes of file {}", file, e);
+						}
+					}).doOnComplete(() -> {
+						for (Path file : filesToDelete) {
+							AtomicBoolean hasFiles = new AtomicBoolean(false);
+							try {
+								if (file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")) {
+									Files.deleteIfExists(file);
+									hasFiles.set(true);
 								}
 							} catch (IOException e) {
-								log.error("Failed to read attributes of file {}", file, e);
+								log.error("Failed to delete file {}", file, e);
 							}
-						})
-						.doOnComplete(() -> {
-							for (Path file : filesToDelete) {
-								AtomicBoolean hasFiles = new AtomicBoolean(false);
-								try {
-									if (file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")) {
-										Files.deleteIfExists(file);
-										hasFiles.set(true);
-									}
-								} catch (IOException e) {
-									log.error("Failed to delete file {}", file, e);
-								}
-								if (!hasFiles.get()) {
-									stopSearching.set(true);
-								}
+							if (!hasFiles.get()) {
+								stopSearching.set(true);
 							}
-						})
-						.then()
-						.subscribeOn(Schedulers.boundedElastic());
+						}
+					}).then().subscribeOn(Schedulers.boundedElastic());
 				})
 				.subscribe();
 		} catch (IOException e) {

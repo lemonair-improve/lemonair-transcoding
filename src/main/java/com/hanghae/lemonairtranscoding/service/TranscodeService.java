@@ -7,26 +7,17 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.hanghae.lemonairtranscoding.aws.AwsS3Uploader;
-import com.hanghae.lemonairtranscoding.transcoding.FFmpegCommandBuilder;
+import com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandBuilder;
+import com.hanghae.lemonairtranscoding.util.LocalFileCleaner;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -35,15 +26,10 @@ import reactor.core.scheduler.Schedulers;
 @RequiredArgsConstructor
 public class TranscodeService {
 
-	private static final long delete_interval = 1L;
 	private final AwsS3Uploader s3Uploader;
-	
-	// 동시성 떄문에 사용
-	private final ConcurrentHashMap<String, Process> processMap = new ConcurrentHashMap<>();
-	private final ScheduledExecutorService deleteFile = Executors.newSingleThreadScheduledExecutor();
+	private final LocalFileCleaner localFileCleaner;
+
 	// private final ScheduledExecutorService uploadExecutor = Executors.newSingleThreadScheduledExecutor();
-	private final AtomicBoolean stopSearching = new AtomicBoolean(true);
-	private final AtomicBoolean showMessage = new AtomicBoolean(true);
 
 	// @Value("${ffmpeg.command}")
 	private String template;
@@ -61,11 +47,8 @@ public class TranscodeService {
 	public Mono<Long> startTranscoding(String email, String owner) {
 		log.info("streaming server 에서 transcoding server에 접근 owner : " + owner);
 
-		// 싱글 스레드 하나를 부여받아서 일정 주기마다 파일을 삭제하고있다.
-		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval,
-			TimeUnit.MINUTES);
-
-		killSubProcess(owner);
+		// 오래된 스트림 파일 삭제 스케쥴링
+		localFileCleaner.setDeleteOldFileTaskSchedule(owner);
 
 		List<String> ffmpegCommand = new FFmpegCommandBuilder(
 			ffmpegExeFilePath,
@@ -76,59 +59,32 @@ public class TranscodeService {
 		ProcessBuilder processBuilder = getTranscodingProcess(owner, ffmpegCommand);
 
 		return Mono.fromCallable(processBuilder::start).flatMap(process -> {
+
+			// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
+			process.onExit().thenAccept((c) -> {
+				localFileCleaner.runWhenFFmpegProcessExit(owner, c);
+			});
 			try {
 				runOutputWatcherThread(process);
 			} catch (InterruptedException e) {
 				throw new RuntimeException(e);
 			}
-
-			// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
-			process.onExit().thenAccept((c) -> {
-				runWhenFFmpegProcessExit(owner, c);
-			});
-
-			processMap.put(owner, process);
+			localFileCleaner.processMap.put(owner, process);
 			// 프로세스의 기본 프로세스 ID를 반환합니다. 기본 프로세스 ID는 운영 체제가 프로세스에 할당하는 식별 번호
 			return Mono.just(process.pid());
 			// 블로킹 IO 태스크와 같은 생명주기가 긴 태스크들에 적합하다.
 			// boundedElastic 은 요청 할때마다 스레드 생성 단, 스레드 수 제한
+
 		}).subscribeOn(Schedulers.boundedElastic()); // subscribeOn은 구독이 어느 스레드에서 이루어질지를 선택한다.
-
 	}
 
-	private void killSubProcess(String owner) {
-		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
-		if (processMap.containsKey(owner) && processMap.get(owner).isAlive()) {
-			// 하위 프로세스를 종료
-			processMap.get(owner).destroyForcibly();
-			processMap.remove(owner);
-		}
-
-		stopSearching.set(false);
-	}
-
-	private void runWhenFFmpegProcessExit(String owner, Process c) {
-		// TODO: 2023-12-05 S3와 연동시 방송 종료시에 S3 안의 데이터를 어떻게 처리할지...
-		log.info(owner + " exited with code " + c.exitValue());
-
-		if (!processMap.get(owner).isAlive()) {
-			processMap.remove(owner);
-		}
-
-		// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
-		Path ownerDirectory = Paths.get(outputPath, owner);
-
-		// deleteAllTsAndJpgFiles(ownerDirectory);
-		// 파일탐색을 중지
-		stopSearching.set(true);
-	}
-
-	private String uploadToS3(String fileDirectory){
+	private String uploadToS3(String fileDirectory) {
 		// 경로.파일명.ts or 경로\파일명.m3u8 파일
 		String fileName = fileDirectory.substring(fileDirectory.lastIndexOf('\\') + 1);
 		File uploadFile = new File(fileDirectory);
 		return s3Uploader.upload(uploadFile, fileName, true);
 	}
+
 	private void runOutputWatcherThread(Process process) throws InterruptedException {
 
 		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
@@ -154,11 +110,11 @@ public class TranscodeService {
 						// 위의 출력을
 						//'C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos/lyulbyung-20231208012612.ts
 						// 로 변경합니다.
-						String fileDirectory =line.substring(line.indexOf('\''), line.lastIndexOf('.'));
-						String uploadedUrl = uploadToS3(fileDirectory);
-						System.out.println("s3에 업로드 성공" + uploadedUrl);
+						String fileDirectory = line.substring(line.indexOf('\''), line.lastIndexOf('.'));
+						// String uploadedUrl = uploadToS3(fileDirectory);
+						// System.out.println("s3에 업로드 성공" + uploadedUrl);
 						// 원하는 동작 수행
-					}else{
+					} else {
 						System.out.println("[FFMPEG]" + line);
 					}
 				}
@@ -201,88 +157,8 @@ public class TranscodeService {
 		// 하위 프로세스 표준 I/O의 소스 및 대상을 현재 Java 프로세스와 동일하게 설정
 		// processBuilder.inheritIO();
 
-
 		processBuilder.directory(new File(directory.toAbsolutePath().toString()));
 		return processBuilder;
 	}
 
-	private Flux<Path> walkFilesFlux(Path path) {
-		try {
-			return Flux.fromStream(
-				Files.walk(path).filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")));
-		} catch (IOException e) {
-			log.error("Failed to walk files", e);
-			return Flux.empty();
-		}
-	}
-	private void deleteOldTsAndJpgFiles(String owner) {
-		if (stopSearching.get()) {
-			if (showMessage.getAndSet(false)) {
-				log.info("No longer searching for files.");
-			}
-			return;
-		}
-
-		Path directoryPath = Paths.get(outputPath);
-
-		try {
-			Flux<Path> dirPaths = Flux.fromStream(Files.list(directoryPath));
-			dirPaths.filter(Files::isDirectory)
-				.filter(dirPath -> dirPath.toFile().getName().equals(owner))
-				.flatMap(dirPath -> {
-					List<Path> filesToDelete = new ArrayList<>();
-					return walkFilesFlux(dirPath).doOnNext(file -> {
-						try {
-							BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
-							Instant currentInstant = Instant.now();
-							Instant fileCreationInstant = attributes.creationTime().toInstant();
-							final long elapsedTime = Duration.between(fileCreationInstant, currentInstant).toMinutes();
-
-							if (elapsedTime >= 1) {
-								filesToDelete.add(file);
-							}
-						} catch (IOException e) {
-							log.error("Failed to read attributes of file {}", file, e);
-						}
-					}).doOnComplete(() -> {
-						for (Path file : filesToDelete) {
-							AtomicBoolean hasFiles = new AtomicBoolean(false);
-							try {
-								if (file.toString().endsWith(".ts") || file.toString().endsWith(".jpg")) {
-									Files.deleteIfExists(file);
-									hasFiles.set(true);
-								}
-							} catch (IOException e) {
-								log.error("Failed to delete file {}", file, e);
-							}
-							if (!hasFiles.get()) {
-								stopSearching.set(true);
-							}
-						}
-					}).then().subscribeOn(Schedulers.boundedElastic());
-				})
-				.subscribe();
-		} catch (IOException e) {
-			log.error("Failed to list directories", e);
-		}
-	}
-
-	// 방송종료 시 남아있는 모든 .ts 파일삭제
-	private void deleteAllTsAndJpgFiles(Path dirPath) {
-		try {
-			Files.walk(dirPath)
-				.filter(file -> file.toString().endsWith(".ts") || file.toString().endsWith(".jpg") || file.toString()
-					.endsWith(".m3u8"))
-				.forEach(file -> {
-					try {
-						Files.deleteIfExists(file);
-						log.info("File deleted: {}", file);
-					} catch (IOException e) {
-						log.error("Failed to delete file {}", file, e);
-					}
-				});
-		} catch (IOException e) {
-			log.error("Failed to walk files", e);
-		}
-	}
 }

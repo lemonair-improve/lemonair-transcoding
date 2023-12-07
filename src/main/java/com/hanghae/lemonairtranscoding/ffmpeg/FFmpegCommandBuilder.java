@@ -1,4 +1,6 @@
-package com.hanghae.lemonairtranscoding.transcoding;
+package com.hanghae.lemonairtranscoding.ffmpeg;
+
+import static com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandConstants.*;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -8,7 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -21,8 +22,8 @@ public class FFmpegCommandBuilder {
 	private final String outputPath;
 	private final String ffmpegPath;
 
+	// 일반적인 방법으로는 썸네일에 현재날짜시각을 추가하여 저장하는 방법이 없음 1,2,3,4로...
 	private final String THUMBNAIL_SERIAL_NUMBER_POSTFIX = "_thumbnail_%04d.jpg";
-	// private final String THUMBNAIL_DATETIME_POSTFIX = "_thumbnail_%Y%m%d_%H%M%S.jpg";
 
 	public FFmpegCommandBuilder(String ffmpegPath, String inputStreamIp, String outputPath) {
 		this.inputStreamIp = inputStreamIp;
@@ -54,6 +55,10 @@ public class FFmpegCommandBuilder {
 	}
 
 	public FFmpegCommandBuilder setLoggingLevel(String loggingLevel) {
+		command.append("-loglevel").append(' ').append(loggingLevel).append(' ');
+		return this;
+	}
+	public FFmpegCommandBuilder setLoggingLevel(int loggingLevel) {
 		command.append("-loglevel").append(' ').append(loggingLevel).append(' ');
 		return this;
 	}
@@ -159,18 +164,6 @@ public class FFmpegCommandBuilder {
 		return this;
 	}
 
-		// String runffmpegWithStreamingUrl = String.format("%s -i %s ", ffmpegPath,
-		// 	inputStreamIp + "/" + owner + "@gmail.com");
-		// String loggingSettings = "-hide_banner -loglevel info -stats ";
-		// String defaultCodecSettings = "-c:v libx264 -c:a aac "; // 기본 비디오 코덱은 libx264, 오디오 코덱은 aac 자막 파일인 vtt 파일은 생성하지 않는다.
-		// String hlsSegmentSettings = String.format("-hls_flags temp_file -hls_time %d -hls_list_size %d ", 2,
-		// 	6); // .m3u8 파일에 포함될 세그먼트의 최대 개수
-		// String m3u8SaveSettings = String.format("-strftime 1 -f hls -sn %s/%s.m3u8 ", "videos",
-		// 	owner);// -strftime 1 현재 시각을 사용하여 videos/지정한파일명.m3u8 로 저장합니다.
-		// String thumbnailSaveSettings = String.format("-vf fps=1/10 -q:v 2 %s -y",
-		// 	thumbnailOutputPathAndName + "\\" + owner + THUMBNAIL_SERIAL_NUMBER_POSTFIX+ ".jpg"); // -y 옵션 : overwrite할지 물어보는 경우가 있다.
-
-
 	private static List<String> getSplitCommand(String command) {
 		List<String> splitCommand = new ArrayList<>();
 		Pattern regex = Pattern.compile("[^\\s\"']+|\"([^\"]*)\"|'([^']*)'");
@@ -193,15 +186,15 @@ public class FFmpegCommandBuilder {
 	public List<String> getDefaultCommand(String email, String streamerName) {
 		return this.setInputStreamRequestUrl(email)
 			.printFFmpegBanner(false)
-			.setLoggingLevel("info")
+			.setLoggingLevel(LOGGING_LEVEL_INFO)
 			.printStatistic(true)
-			.setVideoCodec("libx264")
-			.setAudioCodec("aac")
+			.setVideoCodec(VIDEO_H264)
+			.setAudioCodec(AUDIO_AAC)
 			.useTempFileWriting(true)
 			.setSegmentUnitTime(10)
 			.setSegmentListSize(2)
 			.useDateTimeFileNaming(true)
-			.setOutputType("hls")
+			.setOutputType(OUTPUT_TYPE_HLS)
 			.createVTTFile(false)
 			.setM3U8FileName(streamerName)
 			.createThumbnailBySeconds(10)

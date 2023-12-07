@@ -91,4 +91,19 @@ public class MonoLearnTest {
 		System.out.println();
 	}
 
+
+	@Test
+	void test(){
+		//This is for synchronous and one-by-one emissions, meaning that the sink is a SynchronousSink
+		// and that its next() method can only be called at most once per callback invocation.
+		// You can then additionally call error(Throwable) or complete(), but this is optional.
+		Flux<String> flux = Flux.generate(
+			() -> 0,
+			(state, sink) -> {
+				sink.next("3 x " + state + " = " + 3*state);
+				if (state == 10) sink.complete();
+				return state + 1;
+			});
+		flux.subscribe(System.out::println);
+	}
 }

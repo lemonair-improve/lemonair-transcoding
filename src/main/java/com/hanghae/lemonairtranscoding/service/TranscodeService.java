@@ -48,9 +48,9 @@ public class TranscodeService {
 	private final AtomicBoolean showMessage = new AtomicBoolean(true);
 	// @Value("${ffmpeg.command}")
 	private String template;
-	@Value("${stream.directory}")
+	@Value("${ffmepg.output.directory}")
 	private String outputPath;
-	@Value("${ffmpeg.directory.windows}")
+	@Value("${ffmpeg.exe}")
 	private String ffmpegExeFilePath;
 	@Value("${ffmpeg.ip}")
 	private String ffmpegIp;

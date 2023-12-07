@@ -84,9 +84,9 @@ public class TranscodeService {
 		// String videoOutputPath = Paths.get(getOrCreateVideoPath(owner)).toString();
 		// log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
 
-		List<String> ffmpegCommand =  new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath).getDefault(email, owner);
-		// FFmpegCommandBuilder b = new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath);
-		// List<String> ffmpegCommand = b.getSplitCommand(owner, b.getOrCreateThumbnailPath(owner));
+		// List<String> ffmpegCommand =  new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath).getDefault(email, owner);
+		FFmpegCommandBuilder b = new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath);
+		List<String> ffmpegCommand = b.getSplitCommand(owner, b.getOrCreateThumbnailPath(owner));
 		// 내장된 ffmepg에 명령을 전달할 processBuilder를
 		ProcessBuilder processBuilder = getTranscodingProcess(owner, ffmpegCommand);
 
@@ -105,6 +105,7 @@ public class TranscodeService {
 				if (!processMap.get(owner).isAlive()) {
 					processMap.remove(owner);
 				}
+
 				// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
 				Path ownerDirectory = Paths.get(outputPath, owner);
 

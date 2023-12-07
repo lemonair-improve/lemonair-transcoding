@@ -40,7 +40,7 @@ public class FFmpegCommandBuilder {
 	public FFmpegCommandBuilder setInputStreamRequestUrl(String email) {
 		command.append("-i").append(' ');
 		command.append(this.inputStreamIp);
-		command.append("/transcode/");
+		command.append('/');
 		command.append(email);
 		command.append(' ');
 		return this;
@@ -124,8 +124,8 @@ public class FFmpegCommandBuilder {
 	}
 
 	public FFmpegCommandBuilder setThumbnailCreatePath(String streamerName){
-		command.append(getOrCreateThumbnailPath(streamerName)).append(' ');
-		return this;
+		command.append(getOrCreateThumbnailPath(streamerName));
+		return this.setThumbnailFileName(streamerName);
 	}
 
 	private FFmpegCommandBuilder setThumbnailFileName(String streamerName) {
@@ -148,7 +148,7 @@ public class FFmpegCommandBuilder {
 
 	public FFmpegCommandBuilder useDateTimeFileNaming(boolean use){
 		if(use){
-			command.append("-strftime 1");
+			command.append("-strftime 1").append(' ');
 		}
 		return this;
 	}
@@ -177,7 +177,7 @@ public class FFmpegCommandBuilder {
 		String m3u8SaveSettings = String.format("-strftime 1 -f hls -sn %s/%s.m3u8 ", "videos",
 			owner);// -strftime 1 현재 시각을 사용하여 videos/지정한파일명.m3u8 로 저장합니다.
 		String thumbnailSaveSettings = String.format("-vf fps=1/10 -q:v 2 %s -y",
-			thumbnailOutputPathAndName); // -y 옵션 : overwrite할지 물어보는 경우가 있다.
+			thumbnailOutputPathAndName + "\\" + owner + THUMBNAIL_DATETIME_POSTFIX); // -y 옵션 : overwrite할지 물어보는 경우가 있다.
 
 		// ffmpeg 실행파일 -i rtmp 요청 들어오는 주소
 		// 비디오,오디오 코덱 설정
@@ -230,7 +230,6 @@ public class FFmpegCommandBuilder {
 			.createThumbnailBySeconds(10)
 			.setThumbnailQuality(2)
 			.setThumbnailCreatePath(streamerName)
-			.setThumbnailFileName(streamerName)
 			.build();
 	}
 

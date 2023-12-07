@@ -12,7 +12,7 @@ import reactor.core.publisher.Mono;
 
 public class MonoLearnTest {
 
-	//Mono 역시 Flux와 마찬가지로 Reactive Stream의 Publisher를 상속받은 것을 확인할 수 있습니다.
+	// Mono 역시 Flux와 마찬가지로 Reactive Stream의 Publisher를 상속받은 것을 확인할 수 있습니다.
 	//
 	// 따라서 Mono도 아이템을 produce할 수 있고, subscriber가 subscribe하면 Emit을 할 수 있다는 것은 동일합니다.
 

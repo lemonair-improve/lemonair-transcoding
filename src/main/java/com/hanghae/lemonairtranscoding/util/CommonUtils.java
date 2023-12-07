@@ -3,11 +3,12 @@ package com.hanghae.lemonairtranscoding.util;
 public class CommonUtils {
 	private static final String SEPARATOR = ".";
 
-	// s3에 저장할 때 파일명_업로드시간.확장자 로 저장하기 위한 메소드
-	public static String buildS3FileName(String fileName){
-		int extensionDotIndex = fileName.lastIndexOf(SEPARATOR);
-		String fileExtention = fileName.substring(extensionDotIndex);
-		String timeNow = String.valueOf(System.currentTimeMillis());
-		return fileName.substring(0, extensionDotIndex) + timeNow + fileExtention;
+	/**
+	 *s3에 저장할 때 lyulbyung/lyulbyung-20231208_025600.ts 와 같이 저장할 수 있도록 key를 반환한다.
+ 	 */
+	public static String buildS3Key_Username_Slash_FileName(String fileName){
+		// 파일명이 lyulbyung-20231208_025600.ts와 같으므로 첫번째 하이픈 전이 이름임
+		String username = fileName.substring(0, fileName.indexOf('-'));
+		return username + "/" + fileName;
 	}
 }

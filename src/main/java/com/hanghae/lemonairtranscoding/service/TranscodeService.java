@@ -37,10 +37,7 @@ public class TranscodeService {
 
 	private static final long delete_interval = 1L;
 	private final AwsS3Uploader s3Uploader;
-	//썸네일에 일련번호를 부여하도록 하는 obs studio의 썸네일 생성 옵션을 이용하기 위해 _thumbnail_%04d.jpg 와 같이 정의
-	private final String THUMBNAIL_SERIAL_NUMBER_POSTFIX = "_thumbnail_%04d.jpg";
-	private final String THUMBNAIL_DATETIME_POSTFIX = "_thumbnail_%Y%m%d_%H%M%S.jpg";
-	private final String DATETIME_POSTFIX = "%Y%m%d_%H%M%S";
+	
 	// 동시성 떄문에 사용
 	private final ConcurrentHashMap<String, Process> processMap = new ConcurrentHashMap<>();
 	private final ScheduledExecutorService deleteFile = Executors.newSingleThreadScheduledExecutor();
@@ -68,26 +65,14 @@ public class TranscodeService {
 		deleteFile.scheduleAtFixedRate(() -> this.deleteOldTsAndJpgFiles(owner), delete_interval, delete_interval,
 			TimeUnit.MINUTES);
 
-		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
-		if (processMap.containsKey(owner) && processMap.get(owner).isAlive()) {
-			// 하위 프로세스를 종료
-			processMap.get(owner).destroyForcibly();
-			processMap.remove(owner);
-		}
+		killSubProcess(owner);
 
-		// 파일탐색을 다시 시작
-		stopSearching.set(false);
-		// owner를 위한 썸네일, 비디오 디렉토리가 없다면 생성하고 그 경로를 문자열로 반환한다.
+		List<String> ffmpegCommand = new FFmpegCommandBuilder(
+			ffmpegExeFilePath,
+			inputStreamIp,
+			outputPath).getDefaultCommand(email, owner);
 
-		// String thumbnailOutputPathAndName = Paths.get(getOrCreateThumbnailPath(owner),
-		// 	owner + THUMBNAIL_DATETIME_POSTFIX).toString();
-		// String videoOutputPath = Paths.get(getOrCreateVideoPath(owner)).toString();
-		// log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
-
-		// List<String> ffmpegCommand =  new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath).getDefault(email, owner);
-		FFmpegCommandBuilder b = new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath);
-		List<String> ffmpegCommand = b.getSplitCommand(owner, b.getOrCreateThumbnailPath(owner));
-		// 내장된 ffmepg에 명령을 전달할 processBuilder를
+		// 내장된 ffmepg에 명령을 전달할 processBuilder를 생성
 		ProcessBuilder processBuilder = getTranscodingProcess(owner, ffmpegCommand);
 
 		return Mono.fromCallable(processBuilder::start).flatMap(process -> {
@@ -99,19 +84,7 @@ public class TranscodeService {
 
 			// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
 			process.onExit().thenAccept((c) -> {
-				// TODO: 2023-12-05 S3와 연동시 방송 종료시에 S3 안의 데이터를 어떻게 처리할지...
-				log.info(owner + " exited with code " + c.exitValue());
-
-				if (!processMap.get(owner).isAlive()) {
-					processMap.remove(owner);
-				}
-
-				// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
-				Path ownerDirectory = Paths.get(outputPath, owner);
-
-				// deleteAllTsAndJpgFiles(ownerDirectory);
-				// 파일탐색을 중지
-				stopSearching.set(true);
+				runWhenFFmpegProcessExit(owner, c);
 			});
 
 			processMap.put(owner, process);
@@ -123,12 +96,40 @@ public class TranscodeService {
 
 	}
 
+	private void killSubProcess(String owner) {
+		// isAlive() - 하위 프로세스가 Process활성 상태인지 테스트
+		if (processMap.containsKey(owner) && processMap.get(owner).isAlive()) {
+			// 하위 프로세스를 종료
+			processMap.get(owner).destroyForcibly();
+			processMap.remove(owner);
+		}
 
-
-	private static void runS3UploadThread(String outputPath){
-		// outputPath.
+		stopSearching.set(false);
 	}
-	private static void runOutputWatcherThread(Process process) throws InterruptedException {
+
+	private void runWhenFFmpegProcessExit(String owner, Process c) {
+		// TODO: 2023-12-05 S3와 연동시 방송 종료시에 S3 안의 데이터를 어떻게 처리할지...
+		log.info(owner + " exited with code " + c.exitValue());
+
+		if (!processMap.get(owner).isAlive()) {
+			processMap.remove(owner);
+		}
+
+		// 종료된 프로세스 폴더의 .ts 파일 모두 삭제
+		Path ownerDirectory = Paths.get(outputPath, owner);
+
+		// deleteAllTsAndJpgFiles(ownerDirectory);
+		// 파일탐색을 중지
+		stopSearching.set(true);
+	}
+
+	private String uploadToS3(String fileDirectory){
+		// 경로.파일명.ts or 경로\파일명.m3u8 파일
+		String fileName = fileDirectory.substring(fileDirectory.lastIndexOf('\\') + 1);
+		File uploadFile = new File(fileDirectory);
+		return s3Uploader.upload(uploadFile, fileName, true);
+	}
+	private void runOutputWatcherThread(Process process) throws InterruptedException {
 
 		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 		// 특정 단어를 감시하고자 하는 문자열
@@ -149,8 +150,16 @@ public class TranscodeService {
 
 					if (line.contains(prefix)) {
 						System.out.println("특정 단어를 발견했습니다: " + line);
-						runS3UploadThread(line);
+						// [hls @ 000002045e81f800] Opening 'C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos/lyulbyung-20231208012612.ts.tmp' for writing
+						// 위의 출력을
+						//'C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos/lyulbyung-20231208012612.ts
+						// 로 변경합니다.
+						String fileDirectory =line.substring(line.indexOf('\''), line.lastIndexOf('.'));
+						String uploadedUrl = uploadToS3(fileDirectory);
+						System.out.println("s3에 업로드 성공" + uploadedUrl);
 						// 원하는 동작 수행
+					}else{
+						System.out.println("[FFMPEG]" + line);
 					}
 				}
 			} catch (IOException e) {
@@ -166,12 +175,6 @@ public class TranscodeService {
 		int exitCode = process.waitFor();
 		// 스레드가 종료될 때까지 대기
 		thread.join();
-	}
-
-	private void uploadThumbnail(String line) {
-	}
-
-	private void uploadm3u8(String line) {
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
@@ -196,29 +199,11 @@ public class TranscodeService {
 		// processBuilder 의 redirectErrorStream 속성을 설정
 		processBuilder.redirectErrorStream(true);
 		// 하위 프로세스 표준 I/O의 소스 및 대상을 현재 Java 프로세스와 동일하게 설정
-		processBuilder.inheritIO();
+		// processBuilder.inheritIO();
 
 
 		processBuilder.directory(new File(directory.toAbsolutePath().toString()));
 		return processBuilder;
-	}
-
-
-
-
-
-	// private void uploadThumbNailS3(String owner){
-	// 	Path thumbNailDirectory = Paths.get(outputPath).resolve(owner).resolve("thumbnail");
-	// 	String targetThumbNailName = owner
-	// 	if(!Files.exists(thumbNailDirectory)){
-	// 		log.error(String.format("%s 의 업로드할 썸네일이 존재하지 않습니다.", owner));
-	// 		return;
-	// 	}
-	//
-	// }
-
-	private void uploadVideoS3(String owner) {
-		Path videoDirectory = Paths.get(outputPath).resolve(owner).resolve("video");
 	}
 
 	private Flux<Path> walkFilesFlux(Path path) {
@@ -230,7 +215,6 @@ public class TranscodeService {
 			return Flux.empty();
 		}
 	}
-
 	private void deleteOldTsAndJpgFiles(String owner) {
 		if (stopSearching.get()) {
 			if (showMessage.getAndSet(false)) {

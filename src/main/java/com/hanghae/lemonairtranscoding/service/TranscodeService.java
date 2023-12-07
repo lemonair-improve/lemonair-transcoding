@@ -1,7 +1,9 @@
 package com.hanghae.lemonairtranscoding.service;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -15,13 +17,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.hanghae.lemonairtranscoding.aws.AwsS3Uploader;
+import com.hanghae.lemonairtranscoding.transcoding.FFmpegCommandBuilder;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,21 +44,24 @@ public class TranscodeService {
 	// 동시성 떄문에 사용
 	private final ConcurrentHashMap<String, Process> processMap = new ConcurrentHashMap<>();
 	private final ScheduledExecutorService deleteFile = Executors.newSingleThreadScheduledExecutor();
-	private final ScheduledExecutorService uploadExecutor = Executors.newSingleThreadScheduledExecutor();
+	// private final ScheduledExecutorService uploadExecutor = Executors.newSingleThreadScheduledExecutor();
 	private final AtomicBoolean stopSearching = new AtomicBoolean(true);
 	private final AtomicBoolean showMessage = new AtomicBoolean(true);
+
 	// @Value("${ffmpeg.command}")
 	private String template;
-	@Value("${ffmepg.output.directory}")
+	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
+
 	@Value("${ffmpeg.exe}")
 	private String ffmpegExeFilePath;
 	@Value("${ffmpeg.ip}")
-	private String ffmpegIp;
+	private String inputStreamIp;
+
 	@Value("${upload.s3}")
 	private Boolean uploadS3;
 
-	public Mono<Long> startTranscoding(String owner) {
+	public Mono<Long> startTranscoding(String email, String owner) {
 		log.info("streaming server 에서 transcoding server에 접근 owner : " + owner);
 
 		// 싱글 스레드 하나를 부여받아서 일정 주기마다 파일을 삭제하고있다.
@@ -73,22 +77,31 @@ public class TranscodeService {
 
 		// 파일탐색을 다시 시작
 		stopSearching.set(false);
-
 		// owner를 위한 썸네일, 비디오 디렉토리가 없다면 생성하고 그 경로를 문자열로 반환한다.
-		String thumbnailOutputPathAndName = Paths.get(getOrCreateThumbnailPath(owner),
-			owner + THUMBNAIL_DATETIME_POSTFIX).toString();
-		String videoOutputPath = Paths.get(getOrCreateVideoPath(owner)).toString();
 
-		log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
+		// String thumbnailOutputPathAndName = Paths.get(getOrCreateThumbnailPath(owner),
+		// 	owner + THUMBNAIL_DATETIME_POSTFIX).toString();
+		// String videoOutputPath = Paths.get(getOrCreateVideoPath(owner)).toString();
+		// log.info("thumbnailOutputPathAndName : " + thumbnailOutputPathAndName);
 
-		List<String> splitCommand = getSplitCommand(owner, videoOutputPath, thumbnailOutputPathAndName);
+		List<String> ffmpegCommand =  new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath).getDefault(email, owner);
+		// FFmpegCommandBuilder b = new FFmpegCommandBuilder(ffmpegExeFilePath, inputStreamIp, outputPath);
+		// List<String> ffmpegCommand = b.getSplitCommand(owner, b.getOrCreateThumbnailPath(owner));
 		// 내장된 ffmepg에 명령을 전달할 processBuilder를
-		ProcessBuilder processBuilder = getTranscodingProcess(owner, splitCommand);
+		ProcessBuilder processBuilder = getTranscodingProcess(owner, ffmpegCommand);
+
 		return Mono.fromCallable(processBuilder::start).flatMap(process -> {
+			try {
+				runOutputWatcherThread(process);
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
+			}
+
 			// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
 			process.onExit().thenAccept((c) -> {
 				// TODO: 2023-12-05 S3와 연동시 방송 종료시에 S3 안의 데이터를 어떻게 처리할지...
 				log.info(owner + " exited with code " + c.exitValue());
+
 				if (!processMap.get(owner).isAlive()) {
 					processMap.remove(owner);
 				}
@@ -99,6 +112,7 @@ public class TranscodeService {
 				// 파일탐색을 중지
 				stopSearching.set(true);
 			});
+
 			processMap.put(owner, process);
 			// 프로세스의 기본 프로세스 ID를 반환합니다. 기본 프로세스 ID는 운영 체제가 프로세스에 할당하는 식별 번호
 			return Mono.just(process.pid());
@@ -106,6 +120,51 @@ public class TranscodeService {
 			// boundedElastic 은 요청 할때마다 스레드 생성 단, 스레드 수 제한
 		}).subscribeOn(Schedulers.boundedElastic()); // subscribeOn은 구독이 어느 스레드에서 이루어질지를 선택한다.
 
+	}
+
+
+
+	private static void runS3UploadThread(String outputPath){
+		// outputPath.
+	}
+	private static void runOutputWatcherThread(Process process) throws InterruptedException {
+
+		BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+		// 특정 단어를 감시하고자 하는 문자열
+		String prefix = "[hls";
+
+		// 프로세스의 출력을 읽어들이는 스레드 실행
+		Thread thread = new Thread(() -> {
+			try {
+				String line;
+				while (true) {
+					line = reader.readLine();
+					// 더 이상 읽을 로그가 없을 때 대기
+					if (line == null) {
+						Thread.sleep(1000); // 1초간 대기 후 다시 확인
+						continue;
+					}
+					// 감시하고자 하는 특정 단어가 포함된지 확인
+
+					if (line.contains(prefix)) {
+						System.out.println("특정 단어를 발견했습니다: " + line);
+						runS3UploadThread(line);
+						// 원하는 동작 수행
+					}
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
+			}
+		});
+
+		// 스레드 시작
+		thread.start();
+		// 외부 프로세스가 종료될 때까지 대기
+		int exitCode = process.waitFor();
+		// 스레드가 종료될 때까지 대기
+		thread.join();
 	}
 
 	private void uploadThumbnail(String line) {
@@ -138,73 +197,14 @@ public class TranscodeService {
 		// 하위 프로세스 표준 I/O의 소스 및 대상을 현재 Java 프로세스와 동일하게 설정
 		processBuilder.inheritIO();
 
+
 		processBuilder.directory(new File(directory.toAbsolutePath().toString()));
 		return processBuilder;
 	}
 
-	private List<String> getSplitCommand(String owner, String videoOutputPath, String thumbnailOutputPathAndName) {
-		// String command = String.format(template, address + "/" + owner, owner + "_%v/data%d.ts", owner + "_%v.m3u8", thumbnailOutputPathAndName);
-		//  -i rtmp://localhost:1935: 입력으로 사용될 RTMP 소스의 URL을 지정합니다. 여기서는 localhost의 1935 포트를 사용합니다.
-		//  -c:v libx264: 비디오 스트림에 대한 비디오 코덱을 libx264로 설정합니다. libx264는 H.264 비디오 코덱을 나타냅니다.
-		// 	-c:a aac: 오디오 스트림에 대한 오디오 코덱을 aac로 설정합니다. AAC는 Advanced Audio Coding의 약자로, 오디오 압축을 위한 코덱입니다.
-		// 	-hls_time 10: HLS 세그먼트의 시간을 10초로 설정합니다. 이는 HLS 세그먼트의 길이를 나타냅니다.
-		// 	-hls_list_size 6: HLS 재생목록(.m3u8 파일)에 포함될 세그먼트의 최대 개수를 6으로 설정합니다. 새로운 세그먼트가 생성되면, 재생목록에 최대 6개까지만 유지됩니다.
-		//  C:\Users\sbl\Desktop\ffmpegoutput\byeongryeol.m3u8: HLS 스트리밍의 출력 디렉토리 및 재생목록 파일의 경로를 지정합니다. 여기서는 byeongryeol.m3u8이라는 재생목록 파일이 생성되며, 세그먼트 파일들은 해당 디렉토리에 저장됩니다.
 
-		String runffmpegWithStreamingUrl = String.format("%s -i %s ", ffmpegExeFilePath,
-			ffmpegIp + "/" + owner + "@gmail.com");
-		String defaultCodec = "-c:v libx264 -c:a aac "; // 기본 비디오 코덱은 libx264, 오디오 코덱은 aac
-		String hlsSegmentSetting = String.format("-hls_time %d -hls_list_size %d ", 2, 6); // .m3u8 파일에 포함될 세그먼트의 최대 개수
-		String m3u8SaveSettings = String.format("-strftime 1 %s/%s.m3u8 ", "videos",
-			owner);// -strftime 1 현재 시각을 사용하여 videos/지정한파일명.m3u8 로 저장합니다.
-		String thumbnailSaveSettings = String.format("-vf fps=1/10 -q:v 2 %s", thumbnailOutputPathAndName);
 
-		String command =
-			runffmpegWithStreamingUrl + defaultCodec + hlsSegmentSetting + m3u8SaveSettings + thumbnailSaveSettings;
 
-		log.info(command);
-
-		List<String> splitCommand = new ArrayList<>();
-		Pattern regex = Pattern.compile("[^\\s\"']+|\"([^\"]*)\"|'([^']*)'");
-		Matcher regexMatcher = regex.matcher(command);
-		while (regexMatcher.find()) {
-			if (regexMatcher.group(1) != null) {
-				// 큰따옴표 없이 큰따옴표로 된 문자열을 추가하세요
-				splitCommand.add(regexMatcher.group(1));
-			} else if (regexMatcher.group(2) != null) {
-				// 작은따옴표 없이 작은따옴표로 된 문자열을 추가하세요
-				splitCommand.add(regexMatcher.group(2));
-			} else {
-				// 따옴표 없는 단어를 추가하세요
-				splitCommand.add(regexMatcher.group());
-			}
-		}
-		return splitCommand;
-	}
-
-	private String getOrCreateThumbnailPath(String owner) {
-		Path thumbnailDirectory = Paths.get(outputPath).resolve(owner).resolve("thumbnail");
-		if (!Files.exists(thumbnailDirectory)) {
-			try {
-				Files.createDirectories(thumbnailDirectory);
-			} catch (IOException e) {
-				log.error("e :" + e);
-			}
-		}
-		return thumbnailDirectory.toAbsolutePath().toString();
-	}
-
-	private String getOrCreateVideoPath(String owner) {
-		Path videoDirectory = Paths.get(outputPath).resolve(owner).resolve("videos");
-		if (!Files.exists(videoDirectory)) {
-			try {
-				Files.createDirectories(videoDirectory);
-			} catch (IOException e) {
-				log.error("e :" + e);
-			}
-		}
-		return videoDirectory.toAbsolutePath().toString();
-	}
 
 	// private void uploadThumbNailS3(String owner){
 	// 	Path thumbNailDirectory = Paths.get(outputPath).resolve(owner).resolve("thumbnail");

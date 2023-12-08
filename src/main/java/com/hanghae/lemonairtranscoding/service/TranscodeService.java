@@ -46,7 +46,6 @@ public class TranscodeService {
 
 	public Mono<Long> startTranscoding(String email, String owner) {
 		log.info("streaming server 에서 transcoding server에 접근 owner : " + owner);
-
 		// 오래된 스트림 파일 삭제 스케쥴링
 		localFileCleaner.setDeleteOldFileTaskSchedule(owner);
 
@@ -60,21 +59,24 @@ public class TranscodeService {
 
 		return Mono.fromCallable(processBuilder::start).flatMap(process -> {
 
+			localFileCleaner.processMap.put(owner, process);
+
 			// onExit() - 프로세스 종료를 위한 CompletableFuture<Process>를 반환
 			process.onExit().thenAccept((c) -> {
 				localFileCleaner.runWhenFFmpegProcessExit(owner, c);
 			});
+
+
+			// ffmpeg의 출력을 감시하여 파일 작업 완료시 awsUploader를 통해 파일을 업로드하는 스레드 생성
 			try {
 				runOutputWatcherThread(process);
 			} catch (InterruptedException e) {
 				throw new RuntimeException(e);
 			}
-			localFileCleaner.processMap.put(owner, process);
+
+
 			// 프로세스의 기본 프로세스 ID를 반환합니다. 기본 프로세스 ID는 운영 체제가 프로세스에 할당하는 식별 번호
 			return Mono.just(process.pid());
-			// 블로킹 IO 태스크와 같은 생명주기가 긴 태스크들에 적합하다.
-			// boundedElastic 은 요청 할때마다 스레드 생성 단, 스레드 수 제한
-
 		}).subscribeOn(Schedulers.boundedElastic()); // subscribeOn은 구독이 어느 스레드에서 이루어질지를 선택한다.
 	}
 
@@ -104,7 +106,7 @@ public class TranscodeService {
 					}
 					// 감시하고자 하는 특정 단어가 포함된지 확인
 
-					if (line.contains(prefix)) {
+				 	if (line.contains(prefix)) {
 						System.out.println("특정 단어를 발견했습니다: " + line);
 						// [hls @ 000002045e81f800] Opening 'C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos/lyulbyung-20231208012612.ts.tmp' for writing
 						// 위의 출력을
@@ -119,7 +121,7 @@ public class TranscodeService {
 					}
 				}
 			} catch (IOException e) {
-				e.printStackTrace();
+				log.error("IOException 발생 error : " + e);
 			} catch (InterruptedException e) {
 				throw new RuntimeException(e);
 			}
@@ -134,12 +136,6 @@ public class TranscodeService {
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
-		/*
-		 * ProcessBuilder 클래스의 인스턴스에 정의 된 속성으로 새 프로세스를 만들 수 있다
-		 * ProcessBuilder 의 속성을 사용해 새로운 프로세스를 시작합니다.
-		 * 새로운 프로세스는 directory() 로 지정된 작업 디렉토리의, environment() 로
-		 * 지정된 프로세스 환경을 가지는 command() 로 지정된 커멘드와 인수를 호출
-		 */
 		Path directory = Paths.get(outputPath).resolve(owner);
 		// 경로가 폴더인지 확인
 		if (!Files.exists(Paths.get(outputPath))) {

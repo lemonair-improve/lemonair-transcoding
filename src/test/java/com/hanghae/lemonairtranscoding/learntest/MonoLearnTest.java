@@ -2,6 +2,8 @@ package com.hanghae.lemonairtranscoding.learntest;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -106,4 +108,89 @@ public class MonoLearnTest {
 			});
 		flux.subscribe(System.out::println);
 	}
+
+	@Test
+	void mapAndSubscribeTwiceTest(){
+		Flux<Integer> squared = Flux.range(1,100).map(x->x*x);
+		squared.subscribe(x-> System.out.print(x + " "));
+		System.out.println();
+		squared.map(x -> x / 10).subscribe(x -> System.out.print(x+ " "));
+		System.out.println("두 번 이상 subscribe할 수도 있다.");
+	}
+
+
+	//map과 flatMap은 둘 다 스트림의 중간에 값을 변환해주는 역할을 한다.
+	// map은 1 : 1로 반환을 보증하고 flatMap은 1 : N을 변환할 수 있다.
+	// 요청에 대해 N개를 병렬로 실행할 경우가 많지 않아 map을 많이 쓸 것 같지만 개발을 하다 보면 대다수의 경우 flatMap을 사용하게 된다.
+	@Test
+	void monoMapTest(){
+		/**
+		 * 아래 코드는 map 의 리턴 타입이 원래의 Mono<T> 타입과 동일하기 때문에 에러가 발생합니다.
+		 */
+		// Mono<Integer> intMono = Mono.just(1)
+		// 	.map( x-> (float)x * 10)
+		// 	.subscribe(System.out::println);
+
+		Mono<Integer> intMono = Mono.just(1)
+			.map( x-> x * 10);
+		intMono.subscribe(System.out::println);
+	}
+
+	@Test
+	void intMonoMapToDoubleMonoTest(){
+		Mono<Double> doubleMono = Mono.fromSupplier(()-> 1).map(Integer::doubleValue);
+		doubleMono.subscribe(System.out::println);
+	}
+
+	@Test
+	void intMonoMapToStringMonoTest(){
+		Mono<String> stringMono = Mono.fromSupplier(()->1).map(String::valueOf);
+		stringMono.subscribe(x-> System.out.println(x instanceof String));
+	}
+
+	@Test
+	void intMonoFlatMapToStringMonoTest(){
+		Mono<String> stringMono = Mono.fromSupplier(()-> -123).flatMap( x-> Mono.just("toString :" + x));
+		stringMono.subscribe(System.out::println);
+	}
+
+	/**
+	 * Mono 와 Flux의 map, flatMap 메서드의 차이
+	 * 1. map은 동기 처리, flatMap은 비동기 처리,
+	 * 동기로 꼭 처리해야하는 상황(지금은 어떤지 잘 모르지만) 아니고서야 flatMap으로 처리하게하는 게 좋겠다.
+	 * map으로는 Mono -> Flux, Flux -> Mono의 변환을 할 수 없다.
+	 */
+
+	@Test
+	void reduceFluxToMonoTest(){
+		AtomicInteger result = new AtomicInteger();
+		Mono<Integer> integerMono = Flux.range(1,100).reduce(0, Integer::sum);
+		integerMono.subscribe(result::set);
+
+		assertThat(result.get()).isEqualTo(5050);
+	}
+
+	@Test
+	void flatMapManyMonoToFluxTest(){
+		Mono<Integer> integerMono = Mono.just(10);
+		Flux<String> stringFlux = integerMono.flatMapMany(i ->{
+			List<String> temp = new ArrayList<>();
+			for (int j = 0; j < 10; j++) {
+				temp.add(i * j + " to String");
+			}
+			return Flux.fromIterable(temp);
+		});
+		stringFlux.subscribe(System.out::println);
+	}
+
+	@Test
+	void flatMapMonoToFluxFailedTest (){
+		Mono<String> mono = Mono.just("Hello");
+		/**
+		 * 아래 코드는 flatMap으로 Flux를 반환하려면 Flux가 provided되어야하는데 Mono가 provided되었다는 오류가 발생합니다.
+		 */
+		// Flux<String> flux = mono.flatMap(value -> Flux.just(value + " World", value + " Universe"));
+	}
+
+
 }

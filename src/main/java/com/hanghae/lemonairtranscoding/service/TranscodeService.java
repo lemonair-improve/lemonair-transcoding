@@ -34,8 +34,7 @@ public class TranscodeService {
 	private final LocalFileCleaner localFileCleaner;
 	private final String SAVED_FILE_LOG_PREFIX = "[hls";
 	private final String TEMP_FILE_EXTENSION_POSTFIX = ".tmp";
-	// @Value("${ffmpeg.command}")
-	private String template;
+
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
 	@Value("${ffmpeg.exe}")
@@ -74,9 +73,7 @@ public class TranscodeService {
 			.build();
 
 		ProcessBuilder processBuilder = getTranscodingProcess(streamerName, ffmpegCommand);
-
 		runffmepgAsync(processBuilder).subscribe();
-
 		return Mono.just(1L);
 	}
 
@@ -129,9 +126,7 @@ public class TranscodeService {
 		ProcessBuilder processBuilder = new ProcessBuilder();
 		processBuilder.command(splitCommand);
 		processBuilder.redirectErrorStream(true);
-
 		// processBuilder.inheritIO();
-
 		processBuilder.directory(new File(directory.toAbsolutePath().toString()));
 		return processBuilder;
 	}

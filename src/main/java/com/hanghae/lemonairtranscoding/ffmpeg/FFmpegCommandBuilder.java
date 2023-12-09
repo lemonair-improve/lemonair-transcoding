@@ -12,9 +12,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 
+
 @Slf4j
 public class FFmpegCommandBuilder {
-
 
 	private StringBuilder command;
 
@@ -25,6 +25,24 @@ public class FFmpegCommandBuilder {
 	// 일반적인 방법으로는 썸네일에 현재날짜시각을 추가하여 저장하는 방법이 없음 1,2,3,4로...
 	private final String THUMBNAIL_SERIAL_NUMBER_POSTFIX = "_thumbnail_%04d.jpg";
 
+	/**
+	 * 1. inputStream 지정 <br>
+	 * 2. banner 출력 여부 <br>
+	 * 3. logging level 지정 <br>
+	 * 4. 종료 후 통계 출력 여부 지정 <br>
+	 * 5. 비디오 코덱 지정 <br>
+	 * 6. 오디오 코덱 지정 <br>
+	 * 7. tempfile 쓰기 작업에 활용 여부 <br>
+	 * 8. 세그먼트 하나의 길이 <br>
+	 * 9. 세그먼트 리스트 크기 <br>
+	 * 10. ts파일에 timestamp 적용 여부 <br>
+	 * 11. output타입 지정 <br>
+	 * 12. VTT(자막파일) 생성 여부 <br>
+	 * 13. m3u8 파일명 지정(스트리머 이름) <br>
+	 * 14. 썸네일 생성 주기 지정 <br>
+	 * 15. 썸네일 품질 지정 <br>
+	 * 16. 썸네일 파일명 지정(스트리머 이름)
+	 */
 	public FFmpegCommandBuilder(String ffmpegPath, String inputStreamIp, String outputPath) {
 		this.inputStreamIp = inputStreamIp;
 		this.ffmpegPath = ffmpegPath;
@@ -38,7 +56,7 @@ public class FFmpegCommandBuilder {
 		command.append(' ');
 	}
 
-	public FFmpegCommandBuilder setInputStreamRequestUrl(String email) {
+	public FFmpegCommandBuilder setInputStreamPathVariable(String email) {
 		command.append("-i").append(' ');
 		command.append(this.inputStreamIp);
 		command.append('/');
@@ -151,7 +169,7 @@ public class FFmpegCommandBuilder {
 		return this;
 	}
 
-	public FFmpegCommandBuilder useDateTimeFileNaming(boolean use){
+	public FFmpegCommandBuilder timeStampFileNaming(boolean use){
 		if(use){
 			command.append("-strftime 1").append(' ');
 		}
@@ -184,7 +202,7 @@ public class FFmpegCommandBuilder {
 	}
 
 	public List<String> getDefaultCommand(String email, String streamerName) {
-		return this.setInputStreamRequestUrl(email)
+		return this.setInputStreamPathVariable(email)
 			.printFFmpegBanner(false)
 			.setLoggingLevel(LOGGING_LEVEL_INFO)
 			.printStatistic(true)
@@ -193,7 +211,7 @@ public class FFmpegCommandBuilder {
 			.useTempFileWriting(true)
 			.setSegmentUnitTime(10)
 			.setSegmentListSize(2)
-			.useDateTimeFileNaming(true)
+			.timeStampFileNaming(true)
 			.setOutputType(OUTPUT_TYPE_HLS)
 			.createVTTFile(false)
 			.setM3U8FileName(streamerName)

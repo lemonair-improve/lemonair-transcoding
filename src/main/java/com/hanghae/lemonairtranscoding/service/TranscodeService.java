@@ -17,17 +17,13 @@ import org.springframework.stereotype.Service;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.PutObjectResult;
-import com.hanghae.lemonairtranscoding.aws.AwsS3Uploader;
 import com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandBuilder;
-import com.hanghae.lemonairtranscoding.threads.TranscodingCompleteMonitorThread;
-import com.hanghae.lemonairtranscoding.util.AwsUtils;
 import com.hanghae.lemonairtranscoding.util.LocalFileCleaner;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 @Service
 @Slf4j
@@ -58,8 +54,8 @@ public class TranscodeService {
 		// 오래된 스트림 파일 삭제 스케쥴링
 		localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
 
-		List<String> ffmpegCommand = new FFmpegCommandBuilder(ffmpegPath, inputStreamIp, outputPath)
-			.setInputStreamPathVariable(email)
+		List<String> ffmpegCommand = new FFmpegCommandBuilder(ffmpegPath, inputStreamIp,
+			outputPath).setInputStreamPathVariable(email)
 			.printFFmpegBanner(false)
 			.setLoggingLevel(LOGGING_LEVEL_INFO)
 			.printStatistic(false)
@@ -87,19 +83,20 @@ public class TranscodeService {
 	private Mono<Void> runffmepgAsync(ProcessBuilder processBuilder) {
 		// Transcoding application이 종료되어야 그제서야 각 시각에 맞게 인코딩된 영상들이 정상적으로 저장되는 오류 발생
 		return Mono.fromCallable(() -> {
-				Process process = processBuilder.start();
+			Process process = processBuilder.start();
 
-				Flux<String> logLines = Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
-					.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX));
-				return logLines;
-		}).flatMap(lines -> lines.doOnNext(line->{
+			Flux<String> logLines = Flux.fromStream(
+					() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
+				.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX));
+			return logLines;
+		}).flatMap(lines -> lines.doOnNext(line -> {
 			String fileDirectory = line.substring(line.indexOf('\'') + 1, line.lastIndexOf('\''));
 			if (fileDirectory.endsWith(TEMP_FILE_EXTENSION_POSTFIX)) {
 				log.info("파일 디렉토리에서 .tmp 제거");
 				fileDirectory = fileDirectory.substring(0,
 					fileDirectory.length() - TEMP_FILE_EXTENSION_POSTFIX.length());
 			}
-			if(uploadS3){
+			if (uploadS3) {
 				uploadToS3Async(fileDirectory).subscribe();
 			}
 		}).then());
@@ -108,23 +105,15 @@ public class TranscodeService {
 	private Mono<Void> uploadToS3Async(String fileDirectory) {
 		//C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos\lyulbyung-20231208012612.ts
 		return Mono.fromCallable(() -> {
-				// key lyulbyung/videos/lyulbyung-timestamp.ts
-				// filePath = C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos\lyulbyung-20231208012612.ts
-
-				// key lyulbyung/videos/lyulbyung.m3u8
-				// filePath = C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos\lyulbyung.m3u8
-
-				// key lyulbyung\thumbnail\lyulbyung-thumbnail-0001.jpg
-				// filePath = C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos\lyulbyung-thumbnail-0001.jpg
-				String key = fileDirectory.substring(outputPath.length() + 1, fileDirectory.lastIndexOf('\\'));
-				File file = new File(fileDirectory);
-				PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, file);
-				PutObjectResult putObjectResult = amazonS3.putObject(putObjectRequest);
-				log.info("putObjectResult : " + putObjectResult);
-				log.info("uploadurl : " +amazonS3.getUrl(bucket, key).toString());
-				return null;
-			}
-		);
+			log.info("업로드할 파일 : " + fileDirectory);
+			String key = fileDirectory.substring(outputPath.length() + 1, fileDirectory.lastIndexOf('\\'));
+			File file = new File(fileDirectory);
+			PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, file);
+			PutObjectResult putObjectResult = amazonS3.putObject(putObjectRequest);
+			log.info("putObjectResult : " + putObjectResult);
+			log.info("uploadurl : " + amazonS3.getUrl(bucket, key).toString());
+			return null;
+		});
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {

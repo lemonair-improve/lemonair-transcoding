@@ -37,7 +37,9 @@ public class TranscodeService {
 	private final LocalFileCleaner localFileCleaner;
 	private final String SAVED_FILE_LOG_PREFIX = "[hls";
 	private final String TEMP_FILE_EXTENSION_POSTFIX = ".tmp";
-
+	Scheduler ffmpegLogReaderScheduler;
+	Scheduler awsUploadScheduler;
+	Scheduler ffmpegProcessScheduler;
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
 	@Value("${ffmpeg.exe}")
@@ -48,10 +50,6 @@ public class TranscodeService {
 	private Boolean uploadS3;
 	@Value("${aws.s3.bucket}")
 	private String bucket;
-
-	Scheduler ffmpegLogReaderScheduler;
-	Scheduler awsUploadScheduler;
-	Scheduler ffmpegProcessScheduler;
 
 	@PostConstruct
 	void init() {
@@ -64,27 +62,41 @@ public class TranscodeService {
 		List<String> uploadedFiles = new ArrayList<>();
 		// log.info("streaming server 에서 transcoding server에 접근 streamerName : " + streamerName);
 		localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
-		Mono.fromCallable(() -> {
-			Process process = getDefaultFFmpegProcessBuilder(email, streamerName).start();
-			return Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
-				.subscribeOn(ffmpegLogReaderScheduler)
-				.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX))
-				.map(line -> line.substring(line.indexOf('\'') + 1, line.lastIndexOf('\'')))
-				.map(line -> line.endsWith(TEMP_FILE_EXTENSION_POSTFIX) ?
-					line.substring(0, line.length() - TEMP_FILE_EXTENSION_POSTFIX.length()) : line)
-				.log()
-				.publishOn(awsUploadScheduler)
-				.flatMap(line ->
-					Mono.fromCallable(()->{
-						Thread.sleep(100L);
-						String key = line.substring(outputPath.length() + 1).replaceAll("\\\\", "/");;
-						PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, new File(line));
-						return amazonS3.getUrl(bucket, key).toString();
-					}).log())
-				.subscribe(line -> uploadFile(line, uploadedFiles));
-		}).subscribeOn(ffmpegProcessScheduler).log().subscribe();
 
+		Mono.fromCallable(() -> {
+				Process process = getDefaultFFmpegProcessBuilder(email, streamerName).start();
+				return Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
+					.publishOn(ffmpegLogReaderScheduler)
+					.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX))
+					.map(this::getFilePathInLog)
+					.map(this::removeTmpInFilename)
+					.log()
+					.publishOn(awsUploadScheduler)
+					.map(this::uploadS3)
+					.log()
+					.subscribe(line -> uploadFile(line, uploadedFiles));
+				}).subscribeOn(ffmpegProcessScheduler).log().subscribe();
 		return Mono.just(1L);
+	}
+
+	private String uploadS3(String line) {
+		try {
+			Thread.sleep(100L);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+		String key = line.substring(outputPath.length() + 1).replaceAll("\\\\", "/");
+		PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, new File(line));
+		return amazonS3.getUrl(bucket, key).toString();
+	}
+
+	private String getFilePathInLog(String log) {
+		return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
+	}
+
+	private String removeTmpInFilename(String filename) {
+		return filename.endsWith(TEMP_FILE_EXTENSION_POSTFIX) ?
+			filename.substring(0, filename.length() - TEMP_FILE_EXTENSION_POSTFIX.length()) : filename;
 	}
 
 	private ProcessBuilder getDefaultFFmpegProcessBuilder(String email, String streamerName) {
@@ -111,7 +123,7 @@ public class TranscodeService {
 		return processBuilder;
 	}
 
-	void uploadFile(String filePath, List<String> uploadedFileList){
+	void uploadFile(String filePath, List<String> uploadedFileList) {
 		uploadedFileList.add(filePath);
 		uploadedFileList.stream().forEach(System.out::println);
 	}

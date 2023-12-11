@@ -104,6 +104,9 @@ public class TranscodeService {
 		return Mono.fromCallable(() -> {
 			log.info("업로드할 파일 : " + fileDirectory);
 			String key = fileDirectory.substring(outputPath.length() + 1, fileDirectory.lastIndexOf('\\'));
+			// lyulbyung\videos만 남음,
+			key = key.replace("\\", "/");
+			log.info("key : " + key);
 			File file = new File(fileDirectory);
 			PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, file);
 			PutObjectResult putObjectResult = amazonS3.putObject(putObjectRequest);

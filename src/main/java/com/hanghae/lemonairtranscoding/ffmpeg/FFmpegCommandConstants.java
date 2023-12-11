@@ -54,4 +54,6 @@ public class FFmpegCommandConstants {
 	public static final String OUTPUT_TYPE_MPEG_TS = "mpegts";
 
 
+	public static final int SEGMENTLIST_ALL = 0;
+
 }

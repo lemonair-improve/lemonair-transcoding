@@ -8,14 +8,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.S3Object;
-import com.hanghae.lemonairtranscoding.aws.AwsS3Uploader;
 
 
 @SpringBootTest
 public class AwsS3Test {
 
-	@Autowired
-	private AwsS3Uploader awsS3Uploader;
 
 	@Autowired
 	private AmazonS3 amazonS3;

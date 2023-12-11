@@ -1,4 +1,4 @@
-package com.hanghae.lemonairtranscoding.learntest;
+package com.hanghae.lemonairtranscoding.learntest.webflux;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -17,7 +17,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 import reactor.test.StepVerifier;
 
-public class MonoLearnTest {
+public class MonoFlux_Basic {
 
 	// Mono 역시 Flux와 마찬가지로 Reactive Stream의 Publisher를 상속받은 것을 확인할 수 있습니다.
 	//
@@ -283,7 +283,6 @@ public class MonoLearnTest {
 			}
 			return state + 1;
 		});
-
 		List<Character> sequence1 = characterFlux.take(3).collect(Collectors.toList()).block();
 		List<Character> sequence2 = characterFlux.take(2).collect(Collectors.toList()).block();
 		assert sequence1 != null;

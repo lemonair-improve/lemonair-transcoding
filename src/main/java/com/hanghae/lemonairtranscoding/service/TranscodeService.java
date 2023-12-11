@@ -102,10 +102,11 @@ public class TranscodeService {
 	private Mono<Void> uploadToS3Async(String fileDirectory) {
 		//C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos\lyulbyung-20231208012612.ts
 		return Mono.fromCallable(() -> {
+			Thread.sleep(100L);
 			log.info("업로드할 파일 : " + fileDirectory);
-			String key = fileDirectory.substring(outputPath.length() + 1, fileDirectory.lastIndexOf('\\'));
+			String key = fileDirectory.substring(outputPath.length() + 1);
 			// lyulbyung\videos만 남음,
-			key = key.replace("\\", "/");
+			key = key.replaceAll("\\\\", "/");
 			log.info("key : " + key);
 			File file = new File(fileDirectory);
 			PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, file);

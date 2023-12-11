@@ -4,8 +4,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.Buffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -100,7 +102,56 @@ public class ProcessBuilderLearnTest {
 			});
 	}
 
-	ProcessBuilder print1to1000Process(){
+	@Test
+	void processOnExitTest(){
+		try {
+			Mono.fromCallable(print1to1000Process()::start).flatMap(process -> {
+				process.onExit().thenAccept((c)->{
+					System.out.println("프로세스 종료 thenAccept 실행");
+				});
+
+				BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+				String line;
+				int sevenCount = 0;
+				while(true){
+					try {
+						line = reader.readLine();
+						if(line.contains("7")){
+							sevenCount++;
+							System.out.println("탐색 : " +line);
+						}
+					} catch (IOException e) {
+						System.out.println("e = " + e);
+					}
+				}
+			}).subscribeOn(Schedulers.boundedElastic());
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	@Test
+	void processBlockingTest(){
+		Mono.fromCallable( () -> print1to1000Process().start()).flatMap(process -> {
+			BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+			String line;
+			int sevenCount = 0;
+			while(true){
+				try {
+					line = reader.readLine();
+					if(line.contains("7")){
+						sevenCount++;
+						System.out.println("탐색 : " +line);
+					}
+				} catch (IOException e) {
+					System.out.println("e = " + e);
+				}
+			}
+		}).subscribeOn(Schedulers.boundedElastic());
+	}
+
+	ProcessBuilder print1to1000Process() throws InterruptedException {
+		Thread.sleep(1);
 		ProcessBuilder processBuilder = new ProcessBuilder();
 		// processBuilder.inheritIO();
 		StringBuilder commands = new StringBuilder();

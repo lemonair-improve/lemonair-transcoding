@@ -35,6 +35,6 @@ dependencies {
 //    implementation('software.amazon.awssdk:s3')
 }
 
-//tasks.named('test') {
-//    useJUnitPlatform()
-//}
+tasks.named('test') {
+    useJUnitPlatform()
+}

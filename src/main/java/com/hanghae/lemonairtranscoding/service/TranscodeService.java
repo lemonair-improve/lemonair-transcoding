@@ -76,6 +76,7 @@ public class TranscodeService {
 					.log()
 					.subscribe(line -> uploadFile(line, uploadedFiles));
 				}).subscribeOn(ffmpegProcessScheduler).log().subscribe();
+
 		return Mono.just(1L);
 	}
 

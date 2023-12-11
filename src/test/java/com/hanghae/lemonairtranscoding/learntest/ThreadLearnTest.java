@@ -98,7 +98,7 @@ public class ThreadLearnTest {
 			@Override
 			public Void call() throws Exception {
 				log.info("callable called ");
-				Thread.sleep(3000);
+				Thread.sleep(1000);
 				log.info("after sleep ");
 				return null;
 			}

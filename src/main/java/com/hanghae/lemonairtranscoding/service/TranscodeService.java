@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -16,14 +17,16 @@ import org.springframework.stereotype.Service;
 
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.PutObjectRequest;
-import com.amazonaws.services.s3.model.PutObjectResult;
 import com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandBuilder;
 import com.hanghae.lemonairtranscoding.util.LocalFileCleaner;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 @Service
 @Slf4j
@@ -43,16 +46,48 @@ public class TranscodeService {
 	private String inputStreamIp;
 	@Value("${upload.s3}")
 	private Boolean uploadS3;
-
 	@Value("${aws.s3.bucket}")
 	private String bucket;
 
-	public Mono<Long> startTranscoding(String email, String streamerName) {
-		// TranscodingCompleteMonitorThread transcodingCompleteMonitorThread = new TranscodingCompleteMonitorThread();
-		log.info("streaming server 에서 transcoding server에 접근 streamerName : " + streamerName);
-		// 오래된 스트림 파일 삭제 스케쥴링
-		localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
+	Scheduler ffmpegLogReaderScheduler;
+	Scheduler awsUploadScheduler;
+	Scheduler ffmpegProcessScheduler;
 
+	@PostConstruct
+	void init() {
+		ffmpegLogReaderScheduler = Schedulers.newBoundedElastic(1, 10, "ffmpeg 로그 감시");
+		awsUploadScheduler = Schedulers.newBoundedElastic(10, 10, "aws upload");
+		ffmpegProcessScheduler = Schedulers.newBoundedElastic(1, 10, "FFmpeg 커맨드 실행");
+	}
+
+	public Mono<Long> startTranscoding(String email, String streamerName) {
+		List<String> uploadedFiles = new ArrayList<>();
+		// log.info("streaming server 에서 transcoding server에 접근 streamerName : " + streamerName);
+		localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
+		Mono.fromCallable(() -> {
+			Process process = getDefaultFFmpegProcessBuilder(email, streamerName).start();
+			return Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
+				.subscribeOn(ffmpegLogReaderScheduler)
+				.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX))
+				.map(line -> line.substring(line.indexOf('\'') + 1, line.lastIndexOf('\'')))
+				.map(line -> line.endsWith(TEMP_FILE_EXTENSION_POSTFIX) ?
+					line.substring(0, line.length() - TEMP_FILE_EXTENSION_POSTFIX.length()) : line)
+				.log()
+				.publishOn(awsUploadScheduler)
+				.flatMap(line ->
+					Mono.fromCallable(()->{
+						Thread.sleep(100L);
+						String key = line.substring(outputPath.length() + 1).replaceAll("\\\\", "/");;
+						PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, new File(line));
+						return amazonS3.getUrl(bucket, key).toString();
+					}).log())
+				.subscribe(line -> uploadFile(line, uploadedFiles));
+		}).subscribeOn(ffmpegProcessScheduler).log().subscribe();
+
+		return Mono.just(1L);
+	}
+
+	private ProcessBuilder getDefaultFFmpegProcessBuilder(String email, String streamerName) {
 		List<String> ffmpegCommand = new FFmpegCommandBuilder(ffmpegPath, inputStreamIp,
 			outputPath).setInputStreamPathVariable(email)
 			.printFFmpegBanner(false)
@@ -62,7 +97,7 @@ public class TranscodeService {
 			.setAudioCodec(AUDIO_AAC)
 			.useTempFileWriting(false)
 			.setSegmentUnitTime(2)
-			.setSegmentListSize(15)
+			.setSegmentListSize(SEGMENTLIST_ALL)
 			.timeStampFileNaming(true)
 			.setOutputType(OUTPUT_TYPE_HLS)
 			.createVTTFile(false)
@@ -73,48 +108,12 @@ public class TranscodeService {
 			.build();
 
 		ProcessBuilder processBuilder = getTranscodingProcess(streamerName, ffmpegCommand);
-		runffmepgAsync(processBuilder).subscribe();
-		return Mono.just(1L);
+		return processBuilder;
 	}
 
-	private Mono<Void> runffmepgAsync(ProcessBuilder processBuilder) {
-		// Transcoding application이 종료되어야 그제서야 각 시각에 맞게 인코딩된 영상들이 정상적으로 저장되는 오류 발생
-		return Mono.fromCallable(() -> {
-			Process process = processBuilder.start();
-
-			Flux<String> logLines = Flux.fromStream(
-					() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
-				.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX));
-			return logLines;
-		}).flatMap(lines -> lines.doOnNext(line -> {
-			String fileDirectory = line.substring(line.indexOf('\'') + 1, line.lastIndexOf('\''));
-			if (fileDirectory.endsWith(TEMP_FILE_EXTENSION_POSTFIX)) {
-				log.info("파일 디렉토리에서 .tmp 제거");
-				fileDirectory = fileDirectory.substring(0,
-					fileDirectory.length() - TEMP_FILE_EXTENSION_POSTFIX.length());
-			}
-			if (uploadS3) {
-				uploadToS3Async(fileDirectory).subscribe();
-			}
-		}).then());
-	}
-
-	private Mono<Void> uploadToS3Async(String fileDirectory) {
-		//C:\Users\sbl\Desktop\ffmpegoutput\lyulbyung\videos\lyulbyung-20231208012612.ts
-		return Mono.fromCallable(() -> {
-			Thread.sleep(100L);
-			log.info("업로드할 파일 : " + fileDirectory);
-			String key = fileDirectory.substring(outputPath.length() + 1);
-			// lyulbyung\videos만 남음,
-			key = key.replaceAll("\\\\", "/");
-			log.info("key : " + key);
-			File file = new File(fileDirectory);
-			PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, file);
-			PutObjectResult putObjectResult = amazonS3.putObject(putObjectRequest);
-			log.info("putObjectResult : " + putObjectResult);
-			log.info("uploadurl : " + amazonS3.getUrl(bucket, key).toString());
-			return null;
-		});
+	void uploadFile(String filePath, List<String> uploadedFileList){
+		uploadedFileList.add(filePath);
+		uploadedFileList.stream().forEach(System.out::println);
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {

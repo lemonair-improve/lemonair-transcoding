@@ -13,7 +13,7 @@ import reactor.core.publisher.Mono;
 import reactor.function.TupleUtils;
 import reactor.test.StepVerifier;
 
-public class AvoidFlatMapTest {
+public class StreamOperationTest {
 
 	public Flux<String> getStringFlux(int number) {
 		return Flux.just(String.format("%d를 문자열로 변환하기", number));
@@ -65,7 +65,7 @@ public class AvoidFlatMapTest {
 		// given
 		// 자신의 mock 객체를 만들어서 목객체의 비즈니스로직을 filter 이후에 둬서
 		// filter가 emtpy publisher 인 경우 비즈니스로직이 수행되는지 테스트
-		AvoidFlatMapTest mockThis = Mockito.spy(new AvoidFlatMapTest());
+		StreamOperationTest mockThis = Mockito.spy(new StreamOperationTest());
 		Flux<String> emptyPublisherFlux = Flux.just(-1, 0, 1).filter(i -> i > 2).flatMap(mockThis::myBusinessLogic);
 		// when
 		List<String> results = new ArrayList<>();

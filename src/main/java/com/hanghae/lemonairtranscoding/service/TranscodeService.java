@@ -74,7 +74,7 @@ public class TranscodeService {
 					.publishOn(awsUploadScheduler)
 					.map(this::uploadS3)
 					.log()
-					.subscribe(line -> uploadFile(line, uploadedFiles));
+					.subscribe(line -> addToUploadList(line, uploadedFiles));
 				}).subscribeOn(ffmpegProcessScheduler).log().subscribe();
 
 		return Mono.just(1L);
@@ -88,6 +88,7 @@ public class TranscodeService {
 		}
 		String key = line.substring(outputPath.length() + 1).replaceAll("\\\\", "/");
 		PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, new File(line));
+		amazonS3.putObject(putObjectRequest);
 		return amazonS3.getUrl(bucket, key).toString();
 	}
 
@@ -124,7 +125,7 @@ public class TranscodeService {
 		return processBuilder;
 	}
 
-	void uploadFile(String filePath, List<String> uploadedFileList) {
+	void addToUploadList(String filePath, List<String> uploadedFileList) {
 		uploadedFileList.add(filePath);
 		uploadedFileList.stream().forEach(System.out::println);
 	}

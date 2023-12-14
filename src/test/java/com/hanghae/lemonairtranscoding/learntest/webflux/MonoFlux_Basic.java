@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -325,6 +326,30 @@ public class MonoFlux_Basic {
 		assertThat(consolidated).containsExactlyInAnyOrder('a', 'b', 'c', 'a', 'b');
 	}
 
+	/**
+	 * doAfterTerminate() 메서드는 Operation 수행 성공/실패와 관계없이 종료 이벤트(onComplete(), onError()) 발생시 수행할 부분ㄴ
+	 */
+
+	@Test
+	void doAfterTerminate(){
+		AtomicBoolean isTerminated = new AtomicBoolean(false);
+	    // given
+		Flux<Object> flux = Flux.generate(()->1, (state, sink) -> {
+			sink.next(state);
+			if(state == 10){
+				sink.complete();
+			}
+			return state+1;
+		}).filter(i -> (int)i > 20).doOnTerminate(() -> isTerminated.set(true));
+
+	    // when
+		assert !isTerminated.get(); // 현재는 isTerminated가 false
+		StepVerifier.create(flux).verifyComplete(); // flux를 subscribe해도 filter때문에 아무 값을 가지지 않는다.
+
+	    // then
+		assert isTerminated.get(); // 하지만 doOnTerminate는 실행되었음
+
+	}
 	public static class CharacterCreator {
 		public Consumer<List<Character>> consumer;
 

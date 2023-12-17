@@ -3,3 +3,8 @@ server:
 
 upload:
   s3: true
+
+ffmpeg:
+  debug: false
+  thumbnail:
+    creation-cycle: 10

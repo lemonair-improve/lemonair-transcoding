@@ -56,4 +56,8 @@ public class FFmpegCommandConstants {
 
 	public static final int SEGMENTLIST_ALL = 0;
 
+	public static final int THUMBNAIL_CREATE_STRATEGY_UPDATE = 0;
+	public static final int THUMBNAIL_CREATE_STRATEGY_TIMESTAMP = 1;
+	public static final int THUMBNAIL_CREATE_STRATEGY_SEQUENCE = 2;
+
 }

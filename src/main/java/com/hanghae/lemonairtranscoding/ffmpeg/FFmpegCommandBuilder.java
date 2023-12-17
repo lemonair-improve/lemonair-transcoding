@@ -10,21 +10,35 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
 
 @Slf4j
+@Component
 public class FFmpegCommandBuilder {
 
+	@Value("${ffmpeg.output.directory}")
+	private String outputPath;
+	@Value("${ffmpeg.exe}")
+	private String ffmpegPath;
+	@Value("${ffmpeg.ip}")
+	private String inputStreamIp;
+
+	@Value("${ffmpeg.thumbnail.creation-cycle}")
+	private int thumbnailCreationCycle;
 	private StringBuilder command;
 
-	private final String inputStreamIp;
-	private final String outputPath;
-	private final String ffmpegPath;
+
 
 	// 일반적인 방법으로는 썸네일에 현재날짜시각을 추가하여 저장하는 방법이 없음 1,2,3,4로...
-	private final String THUMBNAIL_SERIAL_NUMBER_POSTFIX = "_thumbnail_%04d.jpg";
 
+	private final String POSTFIX_TIMESTAMP = "-%Y%m%d-%H%M%S";
+	private final String POSTFIX_SEQUENCE = "_%04d";
 	/**
 	 * 1. inputStream 지정 <br>
 	 * 2. banner 출력 여부 <br>
@@ -43,13 +57,9 @@ public class FFmpegCommandBuilder {
 	 * 15. 썸네일 품질 지정 <br>
 	 * 16. 썸네일 파일명 지정(스트리머 이름)
 	 */
-	public FFmpegCommandBuilder(String ffmpegPath, String inputStreamIp, String outputPath) {
-		this.inputStreamIp = inputStreamIp;
-		this.ffmpegPath = ffmpegPath;
-		this.outputPath = outputPath;
-		init();
-	}
 
+
+	@PostConstruct
 	public void init(){
 		command = new StringBuilder();
 		command.append(ffmpegPath);
@@ -72,10 +82,6 @@ public class FFmpegCommandBuilder {
 		return this;
 	}
 
-	public FFmpegCommandBuilder setLoggingLevel(String loggingLevel) {
-		command.append("-loglevel").append(' ').append(loggingLevel).append(' ');
-		return this;
-	}
 	public FFmpegCommandBuilder setLoggingLevel(int loggingLevel) {
 		command.append("-loglevel").append(' ').append(loggingLevel).append(' ');
 		return this;
@@ -116,6 +122,12 @@ public class FFmpegCommandBuilder {
 		command.append("-hls_list_size").append(' ').append(size).append(' ');
 		return this;
 	}
+	private FFmpegCommandBuilder setSegmentFileName(String streamerName) {
+		command.append("-hls_segment_filename").append(' ');
+		getVideoSavePath(streamerName);
+		command.append(streamerName).append(POSTFIX_TIMESTAMP).append(".ts").append(' ');
+		return this;
+	}
 
 	public FFmpegCommandBuilder setOutputType(String type){
 		if(type.equals("hls")){
@@ -131,8 +143,12 @@ public class FFmpegCommandBuilder {
 		return this;
 	}
 
+	private void getVideoSavePath(String name){
+		command.append(getOrCreateVideoPath(name)).append('\\');
+	}
 	public FFmpegCommandBuilder setM3U8FileName(String name){
-		command.append(getOrCreateVideoPath(name)).append('\\').append(name).append(".m3u8").append(' ');
+		getVideoSavePath(name);
+		command.append("m3u8-").append(name).append(".m3u8").append(' ');
 		return this;
 	}
 
@@ -146,21 +162,26 @@ public class FFmpegCommandBuilder {
 		return this;
 	}
 
-	public FFmpegCommandBuilder setThumbnailCreatePath(String streamerName){
-		command.append(getOrCreateThumbnailPath(streamerName));
-		return this.setThumbnailFileName(streamerName);
-	}
+	public FFmpegCommandBuilder setThumbnailCreateSetting(int strategy, String streamerName){
+		switch(strategy){
+			case THUMBNAIL_CREATE_STRATEGY_UPDATE -> {
+				command.append("-update 1").append(' ').append(getOrCreateThumbnailPath(streamerName));
+				command.append('\\').append(streamerName).append("_thumbnail").append(".jpg").append(' ');
+			}
 
-	private FFmpegCommandBuilder setThumbnailFileName(String streamerName) {
-		command.append('\\').append(streamerName).append(THUMBNAIL_SERIAL_NUMBER_POSTFIX).append(' ');
+			case THUMBNAIL_CREATE_STRATEGY_SEQUENCE -> {
+				command.append(getOrCreateThumbnailPath(streamerName));
+				command.append('\\').append(streamerName).append("_thumbnail").append(POSTFIX_SEQUENCE).append(".jpg").append(' ');
+			}
+		}
 		return this;
 	}
-
 	public List<String> build(){
 		command.append("-y");
 		String buildedCommand = command.toString();
 		log.info("buildedCommand : " + buildedCommand);
 
+		init();
 		return getSplitCommand(buildedCommand);
 	}
 	public FFmpegCommandBuilder setBitrate(String bitrate) {
@@ -205,22 +226,22 @@ public class FFmpegCommandBuilder {
 		return this.setInputStreamPathVariable(email)
 			.printFFmpegBanner(false)
 			.setLoggingLevel(LOGGING_LEVEL_INFO)
-			.printStatistic(true)
+			.printStatistic(false)
 			.setVideoCodec(VIDEO_H264)
 			.setAudioCodec(AUDIO_AAC)
-			.useTempFileWriting(true)
-			.setSegmentUnitTime(10)
-			.setSegmentListSize(2)
+			.createVTTFile(false)
+			.useTempFileWriting(false)
+			.setSegmentUnitTime(4)
+			.setSegmentListSize(SEGMENTLIST_ALL)
+			.setSegmentFileName(streamerName)
 			.timeStampFileNaming(true)
 			.setOutputType(OUTPUT_TYPE_HLS)
-			.createVTTFile(false)
 			.setM3U8FileName(streamerName)
 			.createThumbnailBySeconds(10)
 			.setThumbnailQuality(2)
-			.setThumbnailCreatePath(streamerName)
+			.setThumbnailCreateSetting(THUMBNAIL_CREATE_STRATEGY_UPDATE, streamerName)
 			.build();
 	}
-
 
 
 	public String getOrCreateThumbnailPath(String streamerName) {

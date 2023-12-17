@@ -8,9 +8,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +45,9 @@ public class TranscodeService {
 	Scheduler ffmpegLogReaderScheduler;
 	Scheduler awsUploadScheduler;
 	Scheduler ffmpegProcessScheduler;
+
+	private Map<String, ScheduledFuture<?>> scheduledTasks = new HashMap<>();
+
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
 
@@ -141,8 +147,12 @@ public class TranscodeService {
 	}
 
 	private void scheduleThumbnailUploadTask(String streamerName) {
-		thumbnailUploadExecutorService.scheduleAtFixedRate(() -> uploadThumbnailFileToS3(streamerName),
-			thumbnailCreationCycle + 1, thumbnailCreationCycle, TimeUnit.SECONDS);
+		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
+			() -> uploadThumbnailFileToS3(streamerName),
+			thumbnailCreationCycle + 1, thumbnailCreationCycle, TimeUnit.SECONDS
+		);
+
+		scheduledTasks.put(streamerName, scheduledThumbnailTask);
 	}
 
 	private void uploadThumbnailFileToS3(String streamerName) {
@@ -154,5 +164,14 @@ public class TranscodeService {
 		}
 
 		awsService.uploadToS3(filePath);
+	}
+
+	public Mono<Boolean> endBroadcast(String streamerName) {
+		ScheduledFuture<?> scheduledThumbnailTask = scheduledTasks.get(streamerName);
+		if (scheduledThumbnailTask != null && !scheduledThumbnailTask.isDone()) {
+			scheduledThumbnailTask.cancel(false);
+			scheduledTasks.remove(streamerName);
+		}
+		return Mono.just(true);
 	}
 }

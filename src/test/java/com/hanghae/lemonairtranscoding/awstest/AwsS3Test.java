@@ -24,6 +24,13 @@ public class AwsS3Test {
 	}
 
 	@Test
+	void uploadFileTest2(){
+		File file = new File("C:\\Users\\sbl\\Desktop\\uploadtest.txt.txt");
+		amazonS3.putObject("lemonair-streaming", "lyulbyung/videos", file);
+	}
+
+
+	@Test
 	void checkFiles(){
 		S3Object s3Object = amazonS3.getObject("lemonair-streaming", "sbl/sm2");
 		System.out.println("s3Object.getObjectContent().toString() = " + s3Object.getObjectContent().toString());

@@ -1,7 +1,5 @@
 package com.hanghae.lemonairtranscoding.service;
 
-import static com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandConstants.*;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -11,12 +9,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandBuilder;
 import com.hanghae.lemonairtranscoding.util.LocalFileCleaner;
 
@@ -33,23 +32,30 @@ import reactor.core.scheduler.Schedulers;
 @RequiredArgsConstructor
 public class TranscodeService {
 
-	private final AmazonS3 amazonS3;
 	private final LocalFileCleaner localFileCleaner;
-	private final String SAVED_FILE_LOG_PREFIX = "[hls";
-	private final String TEMP_FILE_EXTENSION_POSTFIX = ".tmp";
+	private final FFmpegCommandBuilder fFmpegCommandBuilder;
+	private final AwsService awsService;
+	private final String PREFIX_SAVED_FILE_LOG = "[hls";
+	private final String POSTFIX_TEMP_FILE_EXTENSION = ".tmp";
+
+	private final ScheduledExecutorService thumbnailUploadExecutorService = Executors.newSingleThreadScheduledExecutor();
 	Scheduler ffmpegLogReaderScheduler;
 	Scheduler awsUploadScheduler;
 	Scheduler ffmpegProcessScheduler;
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
+
 	@Value("${ffmpeg.exe}")
 	private String ffmpegPath;
+
 	@Value("${ffmpeg.ip}")
 	private String inputStreamIp;
-	@Value("${upload.s3}")
-	private Boolean uploadS3;
-	@Value("${aws.s3.bucket}")
-	private String bucket;
+
+	@Value("${ffmpeg.debug}")
+	private boolean ffmpegDebugMode;
+
+	@Value("${ffmpeg.thumbnail.creation-cycle}")
+	private int thumbnailCreationCycle;
 
 	@PostConstruct
 	void init() {
@@ -60,74 +66,56 @@ public class TranscodeService {
 
 	public Mono<Long> startTranscoding(String email, String streamerName) {
 		List<String> uploadedFiles = new ArrayList<>();
-		// log.info("streaming server 에서 transcoding server에 접근 streamerName : " + streamerName);
-		localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
-
-		Mono.fromCallable(() -> {
-				Process process = getDefaultFFmpegProcessBuilder(email, streamerName).start();
-				return Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
-					.publishOn(ffmpegLogReaderScheduler)
-					.filter(line -> line.startsWith(SAVED_FILE_LOG_PREFIX))
-					.map(this::getFilePathInLog)
-					.map(this::removeTmpInFilename)
-					.log()
-					.publishOn(awsUploadScheduler)
-					.map(this::uploadS3)
-					.log()
-					.subscribe(line -> addToUploadList(line, uploadedFiles));
-				}).subscribeOn(ffmpegProcessScheduler).log().subscribe();
-
+		// localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
+		Process process = null;
+		try {
+			process = startFFmpegProcess(email, streamerName);
+		} catch (IOException ex) {
+			throw new RuntimeException(ex);
+		}
+		UploadToAws(filterFileSavedLog(process));
+		scheduleThumbnailUploadTask(streamerName);
 		return Mono.just(1L);
 	}
 
-	private String uploadS3(String line) {
+	private Process startFFmpegProcess(String email, String streamerName) throws IOException {
+		return getDefaultFFmpegProcessBuilder(email, streamerName).start();
+	}
+
+	private Flux<String> filterFileSavedLog(Process process) {
+		return Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
+			.publishOn(ffmpegLogReaderScheduler)
+			.filter(line -> line.startsWith(PREFIX_SAVED_FILE_LOG))
+			.map(this::extractSavedFilePathInLog)
+			.map(this::removeTmpInFilename)
+			.log();
+	}
+
+	private void UploadToAws(Flux<String> logLines) {
+		logLines.publishOn(awsUploadScheduler).map(this::uploadVideoFilesToS3).log().subscribe();
+	}
+
+	private String uploadVideoFilesToS3(String filePath) {
 		try {
 			Thread.sleep(100L);
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
 		}
-		String key = line.substring(outputPath.length() + 1).replaceAll("\\\\", "/");
-		PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, new File(line));
-		amazonS3.putObject(putObjectRequest);
-		return amazonS3.getUrl(bucket, key).toString();
+		return awsService.uploadToS3(filePath);
 	}
 
-	private String getFilePathInLog(String log) {
+	private String extractSavedFilePathInLog(String log) {
 		return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
 	}
 
 	private String removeTmpInFilename(String filename) {
-		return filename.endsWith(TEMP_FILE_EXTENSION_POSTFIX) ?
-			filename.substring(0, filename.length() - TEMP_FILE_EXTENSION_POSTFIX.length()) : filename;
+		return filename.endsWith(POSTFIX_TEMP_FILE_EXTENSION) ?
+			filename.substring(0, filename.length() - POSTFIX_TEMP_FILE_EXTENSION.length()) : filename;
 	}
 
 	private ProcessBuilder getDefaultFFmpegProcessBuilder(String email, String streamerName) {
-		List<String> ffmpegCommand = new FFmpegCommandBuilder(ffmpegPath, inputStreamIp,
-			outputPath).setInputStreamPathVariable(email)
-			.printFFmpegBanner(false)
-			.setLoggingLevel(LOGGING_LEVEL_INFO)
-			.printStatistic(false)
-			.setVideoCodec(VIDEO_H264)
-			.setAudioCodec(AUDIO_AAC)
-			.useTempFileWriting(false)
-			.setSegmentUnitTime(2)
-			.setSegmentListSize(SEGMENTLIST_ALL)
-			.timeStampFileNaming(true)
-			.setOutputType(OUTPUT_TYPE_HLS)
-			.createVTTFile(false)
-			.setM3U8FileName(streamerName)
-			.createThumbnailBySeconds(10)
-			.setThumbnailQuality(2)
-			.setThumbnailCreatePath(streamerName)
-			.build();
-
-		ProcessBuilder processBuilder = getTranscodingProcess(streamerName, ffmpegCommand);
-		return processBuilder;
-	}
-
-	void addToUploadList(String filePath, List<String> uploadedFileList) {
-		uploadedFileList.add(filePath);
-		uploadedFileList.stream().forEach(System.out::println);
+		List<String> ffmpegCommand = fFmpegCommandBuilder.getDefaultCommand(email, streamerName);
+		return getTranscodingProcess(streamerName, ffmpegCommand);
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
@@ -143,9 +131,28 @@ public class TranscodeService {
 		ProcessBuilder processBuilder = new ProcessBuilder();
 		processBuilder.command(splitCommand);
 		processBuilder.redirectErrorStream(true);
-		// processBuilder.inheritIO();
 		processBuilder.directory(new File(directory.toAbsolutePath().toString()));
+
+		if (ffmpegDebugMode) {
+			processBuilder.inheritIO();
+		}
+
 		return processBuilder;
 	}
 
+	private void scheduleThumbnailUploadTask(String streamerName) {
+		thumbnailUploadExecutorService.scheduleAtFixedRate(() -> uploadThumbnailFileToS3(streamerName),
+			thumbnailCreationCycle + 1, thumbnailCreationCycle, TimeUnit.SECONDS);
+	}
+
+	private void uploadThumbnailFileToS3(String streamerName) {
+		String filePath =
+			outputPath + "/" + streamerName + "/thumbnail" + "/" + streamerName + "_thumbnail.jpg";
+		if (!Files.exists(Paths.get(filePath))) {
+			log.info(filePath + " 해당 썸네일 파일 없음");
+			return;
+		}
+
+		awsService.uploadToS3(filePath);
+	}
 }

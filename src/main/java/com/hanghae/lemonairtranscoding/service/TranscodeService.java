@@ -149,7 +149,7 @@ public class TranscodeService {
 	private void scheduleThumbnailUploadTask(String userId) {
 		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
 			() -> uploadThumbnailFileToS3(userId),
-			thumbnailCreationCycle + 1, thumbnailCreationCycle, TimeUnit.SECONDS
+			16, thumbnailCreationCycle, TimeUnit.SECONDS
 		);
 
 		scheduledTasks.put(userId, scheduledThumbnailTask);

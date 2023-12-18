@@ -66,11 +66,11 @@ public class FFmpegCommandBuilder {
 		command.append(' ');
 	}
 
-	public FFmpegCommandBuilder setInputStreamPathVariable(String email) {
+	public FFmpegCommandBuilder setInputStreamPathVariable(String userId) {
 		command.append("-i").append(' ');
 		command.append(this.inputStreamIp);
 		command.append('/');
-		command.append(email);
+		command.append(userId);
 		command.append(' ');
 		return this;
 	}
@@ -122,10 +122,10 @@ public class FFmpegCommandBuilder {
 		command.append("-hls_list_size").append(' ').append(size).append(' ');
 		return this;
 	}
-	private FFmpegCommandBuilder setSegmentFileName(String streamerName) {
+	private FFmpegCommandBuilder setSegmentFileName(String userId) {
 		command.append("-hls_segment_filename").append(' ');
-		getVideoSavePath(streamerName);
-		command.append(streamerName).append(POSTFIX_TIMESTAMP).append(".ts").append(' ');
+		getVideoSavePath(userId);
+		command.append(userId).append(POSTFIX_TIMESTAMP).append(".ts").append(' ');
 		return this;
 	}
 
@@ -162,16 +162,16 @@ public class FFmpegCommandBuilder {
 		return this;
 	}
 
-	public FFmpegCommandBuilder setThumbnailCreateSetting(int strategy, String streamerName){
+	public FFmpegCommandBuilder setThumbnailCreateSetting(int strategy, String userId){
 		switch(strategy){
 			case THUMBNAIL_CREATE_STRATEGY_UPDATE -> {
-				command.append("-update 1").append(' ').append(getOrCreateThumbnailPath(streamerName));
-				command.append('\\').append(streamerName).append("_thumbnail").append(".jpg").append(' ');
+				command.append("-update 1").append(' ').append(getOrCreateThumbnailPath(userId));
+				command.append('\\').append(userId).append("_thumbnail").append(".jpg").append(' ');
 			}
 
 			case THUMBNAIL_CREATE_STRATEGY_SEQUENCE -> {
-				command.append(getOrCreateThumbnailPath(streamerName));
-				command.append('\\').append(streamerName).append("_thumbnail").append(POSTFIX_SEQUENCE).append(".jpg").append(' ');
+				command.append(getOrCreateThumbnailPath(userId));
+				command.append('\\').append(userId).append("_thumbnail").append(POSTFIX_SEQUENCE).append(".jpg").append(' ');
 			}
 		}
 		return this;
@@ -222,8 +222,8 @@ public class FFmpegCommandBuilder {
 		return splitCommand;
 	}
 
-	public List<String> getDefaultCommand(String email, String streamerName) {
-		return this.setInputStreamPathVariable(email)
+	public List<String> getDefaultCommand(String userId) {
+		return this.setInputStreamPathVariable(userId)
 			.printFFmpegBanner(false)
 			.setLoggingLevel(LOGGING_LEVEL_INFO)
 			.printStatistic(false)
@@ -233,19 +233,19 @@ public class FFmpegCommandBuilder {
 			.useTempFileWriting(false)
 			.setSegmentUnitTime(4)
 			.setSegmentListSize(SEGMENTLIST_ALL)
-			.setSegmentFileName(streamerName)
+			.setSegmentFileName(userId)
 			.timeStampFileNaming(true)
 			.setOutputType(OUTPUT_TYPE_HLS)
-			.setM3U8FileName(streamerName)
+			.setM3U8FileName(userId)
 			.createThumbnailBySeconds(10)
 			.setThumbnailQuality(2)
-			.setThumbnailCreateSetting(THUMBNAIL_CREATE_STRATEGY_UPDATE, streamerName)
+			.setThumbnailCreateSetting(THUMBNAIL_CREATE_STRATEGY_UPDATE, userId)
 			.build();
 	}
 
 
-	public String getOrCreateThumbnailPath(String streamerName) {
-		Path thumbnailDirectory = Paths.get(outputPath).resolve(streamerName).resolve("thumbnail");
+	public String getOrCreateThumbnailPath(String userId) {
+		Path thumbnailDirectory = Paths.get(outputPath).resolve(userId).resolve("thumbnail");
 		if (!Files.exists(thumbnailDirectory)) {
 			try {
 				Files.createDirectories(thumbnailDirectory);
@@ -256,8 +256,8 @@ public class FFmpegCommandBuilder {
 		return thumbnailDirectory.toAbsolutePath().toString();
 	}
 
-	private String getOrCreateVideoPath(String streamerName) {
-		Path videoDirectory = Paths.get(outputPath).resolve(streamerName).resolve("videos");
+	private String getOrCreateVideoPath(String userId) {
+		Path videoDirectory = Paths.get(outputPath).resolve(userId).resolve("videos");
 		if (!Files.exists(videoDirectory)) {
 			try {
 				Files.createDirectories(videoDirectory);

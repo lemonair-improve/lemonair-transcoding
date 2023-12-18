@@ -70,22 +70,22 @@ public class TranscodeService {
 		ffmpegProcessScheduler = Schedulers.newBoundedElastic(1, 10, "FFmpeg 커맨드 실행");
 	}
 
-	public Mono<Long> startTranscoding(String email, String streamerName) {
+	public Mono<Long> startTranscoding(String userId) {
 		List<String> uploadedFiles = new ArrayList<>();
-		// localFileCleaner.setDeleteOldFileTaskSchedule(streamerName);
+		// localFileCleaner.setDeleteOldFileTaskSchedule(userId);
 		Process process = null;
 		try {
-			process = startFFmpegProcess(email, streamerName);
+			process = startFFmpegProcess(userId);
 		} catch (IOException ex) {
 			throw new RuntimeException(ex);
 		}
 		UploadToAws(filterFileSavedLog(process));
-		scheduleThumbnailUploadTask(streamerName);
+		scheduleThumbnailUploadTask(userId);
 		return Mono.just(1L);
 	}
 
-	private Process startFFmpegProcess(String email, String streamerName) throws IOException {
-		return getDefaultFFmpegProcessBuilder(email, streamerName).start();
+	private Process startFFmpegProcess(String userId) throws IOException {
+		return getDefaultFFmpegProcessBuilder(userId).start();
 	}
 
 	private Flux<String> filterFileSavedLog(Process process) {
@@ -119,9 +119,9 @@ public class TranscodeService {
 			filename.substring(0, filename.length() - POSTFIX_TEMP_FILE_EXTENSION.length()) : filename;
 	}
 
-	private ProcessBuilder getDefaultFFmpegProcessBuilder(String email, String streamerName) {
-		List<String> ffmpegCommand = fFmpegCommandBuilder.getDefaultCommand(email, streamerName);
-		return getTranscodingProcess(streamerName, ffmpegCommand);
+	private ProcessBuilder getDefaultFFmpegProcessBuilder(String userId) {
+		List<String> ffmpegCommand = fFmpegCommandBuilder.getDefaultCommand(userId);
+		return getTranscodingProcess(userId, ffmpegCommand);
 	}
 
 	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
@@ -146,18 +146,18 @@ public class TranscodeService {
 		return processBuilder;
 	}
 
-	private void scheduleThumbnailUploadTask(String streamerName) {
+	private void scheduleThumbnailUploadTask(String userId) {
 		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
-			() -> uploadThumbnailFileToS3(streamerName),
+			() -> uploadThumbnailFileToS3(userId),
 			thumbnailCreationCycle + 1, thumbnailCreationCycle, TimeUnit.SECONDS
 		);
 
-		scheduledTasks.put(streamerName, scheduledThumbnailTask);
+		scheduledTasks.put(userId, scheduledThumbnailTask);
 	}
 
-	private void uploadThumbnailFileToS3(String streamerName) {
+	private void uploadThumbnailFileToS3(String userId) {
 		String filePath =
-			outputPath + "/" + streamerName + "/thumbnail" + "/" + streamerName + "_thumbnail.jpg";
+			outputPath + "/" + userId + "/thumbnail" + "/" + userId + "_thumbnail.jpg";
 		if (!Files.exists(Paths.get(filePath))) {
 			log.info(filePath + " 해당 썸네일 파일 없음");
 			return;
@@ -166,11 +166,11 @@ public class TranscodeService {
 		awsService.uploadToS3(filePath);
 	}
 
-	public Mono<Boolean> endBroadcast(String streamerName) {
-		ScheduledFuture<?> scheduledThumbnailTask = scheduledTasks.get(streamerName);
+	public Mono<Boolean> endBroadcast(String userId) {
+		ScheduledFuture<?> scheduledThumbnailTask = scheduledTasks.get(userId);
 		if (scheduledThumbnailTask != null && !scheduledThumbnailTask.isDone()) {
 			scheduledThumbnailTask.cancel(false);
-			scheduledTasks.remove(streamerName);
+			scheduledTasks.remove(userId);
 		}
 		return Mono.just(true);
 	}

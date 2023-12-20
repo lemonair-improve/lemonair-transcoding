@@ -45,13 +45,17 @@ public class AwsS3Test {
 	@Test
 	void uploadFileAsyncTest() {
 		String fileName = "uploadtest.txt";
-		PutObjectRequest putObjectRequest = PutObjectRequest.builder().key("uploadtest/" + fileName).bucket(bucket).cacheControl("max-age=0, no-cache, no-store, must-revalidate").build();
+		PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+			.key("uploadtest/" + fileName)
+			.bucket(bucket)
+			.cacheControl("max-age=0, no-cache, no-store, must-revalidate")
+			.build();
 		Path path = Path.of("C:\\Users\\sbl\\Desktop\\" + fileName);
 		s3AsyncClient.putObject(putObjectRequest, path).join();
 	}
 
 	@Test
-	void getObjectMetadataTest(){
+	void getObjectMetadataTest() {
 		ObjectMetadata metadata = s3SyncClient.getObjectMetadata(bucket, "uploadtest/uploadtest.txt");
 		// 표준 메타데이터 출력
 		System.out.println("Cache-Control: " + metadata.getCacheControl());

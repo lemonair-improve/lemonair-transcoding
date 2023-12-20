@@ -51,17 +51,11 @@ public class TranscodeService {
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
 
-	@Value("${ffmpeg.exe}")
-	private String ffmpegPath;
-
-	@Value("${ffmpeg.ip}")
-	private String inputStreamIp;
-
 	@Value("${ffmpeg.debug}")
 	private boolean ffmpegDebugMode;
 
-	@Value("${ffmpeg.thumbnail.creation-cycle}")
-	private int thumbnailCreationCycle;
+	@Value("${ffmpeg.thumbnail.upload-cycle}")
+	private int thumbnailUploadCycle;
 
 	@PostConstruct
 	void init() {
@@ -99,15 +93,6 @@ public class TranscodeService {
 
 	private void UploadToAws(Flux<String> logLines) {
 		logLines.publishOn(awsUploadScheduler).map(this::uploadVideoFilesToS3).log().subscribe();
-	}
-
-	private String uploadVideoFilesToS3(String filePath) {
-		try {
-			Thread.sleep(100L);
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
-		}
-		return awsService.uploadToS3(filePath);
 	}
 
 	private String extractSavedFilePathInLog(String log) {
@@ -148,22 +133,28 @@ public class TranscodeService {
 
 	private void scheduleThumbnailUploadTask(String userId) {
 		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
-			() -> uploadThumbnailFileToS3(userId),
-			16, thumbnailCreationCycle, TimeUnit.SECONDS
-		);
+			() -> uploadThumbnailFileToS3(userId), 16, thumbnailUploadCycle, TimeUnit.SECONDS);
 
 		scheduledTasks.put(userId, scheduledThumbnailTask);
 	}
 
 	private void uploadThumbnailFileToS3(String userId) {
-		String filePath =
-			outputPath + "/" + userId + "/thumbnail" + "/" + userId + "_thumbnail.jpg";
+		String filePath = outputPath + "/" + userId + "/thumbnail" + "/" + userId + "_thumbnail.jpg";
 		if (!Files.exists(Paths.get(filePath))) {
 			log.info(filePath + " 해당 썸네일 파일 없음");
 			return;
 		}
 
-		awsService.uploadToS3(filePath);
+		awsService.uploadToS3Async(filePath);
+	}
+
+	private String uploadVideoFilesToS3(String filePath) {
+		try {
+			Thread.sleep(100L);
+		} catch (InterruptedException e) {
+			throw new RuntimeException(e);
+		}
+		return awsService.uploadToS3Async(filePath);
 	}
 
 	public Mono<Boolean> endBroadcast(String userId) {

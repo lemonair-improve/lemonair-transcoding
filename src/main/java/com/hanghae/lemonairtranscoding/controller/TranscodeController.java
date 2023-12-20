@@ -17,12 +17,12 @@ public class TranscodeController {
 	private final TranscodeService transcodeService;
 
 	@GetMapping("/{streamerId}")
-	Mono<Long> startTransCoding(@PathVariable("streamerId") String streamerId) {
-		return transcodeService.startTranscoding(streamerId);
+	Mono<Long> startTransCoding(@PathVariable("streamerId") String userId){
+		return transcodeService.startTranscoding(userId);
 	}
 
-	@GetMapping("/offair/{owner}")
-	Mono<Boolean> endBroadcast(@PathVariable String owner) {
-		return transcodeService.endBroadcast(owner);
+	@GetMapping("/offair/{streamerId}")
+	Mono<Boolean> endBroadcast(@PathVariable String streamerId) {
+		return transcodeService.endBroadcast(streamerId);
 	}
 }

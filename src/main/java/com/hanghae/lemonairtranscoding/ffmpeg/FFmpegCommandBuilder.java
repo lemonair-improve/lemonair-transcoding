@@ -57,8 +57,6 @@ public class FFmpegCommandBuilder {
 	 * 15. 썸네일 품질 지정 <br>
 	 * 16. 썸네일 파일명 지정(스트리머 이름)
 	 */
-
-
 	@PostConstruct
 	public void init(){
 		command = new StringBuilder();
@@ -114,6 +112,7 @@ public class FFmpegCommandBuilder {
 	}
 
 	public FFmpegCommandBuilder setSegmentUnitTime(int second){
+		command.append("-hls_flags split_by_time").append(' ');
 		command.append("-hls_time").append(' ').append(second).append(' ');
 		return this;
 	}
@@ -231,13 +230,13 @@ public class FFmpegCommandBuilder {
 			.setAudioCodec(AUDIO_AAC)
 			.createVTTFile(false)
 			.useTempFileWriting(false)
-			.setSegmentUnitTime(4)
+			.setSegmentUnitTime(2)
 			.setSegmentListSize(SEGMENTLIST_ALL)
 			.setSegmentFileName(userId)
 			.timeStampFileNaming(true)
 			.setOutputType(OUTPUT_TYPE_HLS)
 			.setM3U8FileName(userId)
-			.createThumbnailBySeconds(10)
+			.createThumbnailBySeconds(thumbnailCreationCycle)
 			.setThumbnailQuality(2)
 			.setThumbnailCreateSetting(THUMBNAIL_CREATE_STRATEGY_UPDATE, userId)
 			.build();

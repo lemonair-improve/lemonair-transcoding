@@ -13,19 +13,13 @@ public class SchedulerLearnTest {
 	// elastic은 긴 태스크에 대해 IO blocking이 발생할 때
 	// boundedElastic은 elastic과 비슷하지만 쓰레드풀의 크기를 제한함. 입출력 작업에 적합함 - 추천
 
-
-
 	@Test
-	void customScheduler(){
+	void customScheduler() {
 		Scheduler scheduler = Schedulers.newBoundedElastic(10, 100, "subscriber1");
-		Flux.range(1, 100)
-			.map(i ->{
-				System.out.println(Thread.currentThread().getName());
-				return i*10;
-			}).subscribeOn(scheduler)
-			.subscribe(System.out::println);
-
-
+		Flux.range(1, 100).map(i -> {
+			System.out.println(Thread.currentThread().getName());
+			return i * 10;
+		}).subscribeOn(scheduler).subscribe(System.out::println);
 
 	}
 }

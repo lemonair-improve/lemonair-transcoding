@@ -331,25 +331,26 @@ public class MonoFlux_Basic {
 	 */
 
 	@Test
-	void doAfterTerminate(){
+	void doAfterTerminate() {
 		AtomicBoolean isTerminated = new AtomicBoolean(false);
-	    // given
-		Flux<Object> flux = Flux.generate(()->1, (state, sink) -> {
+		// given
+		Flux<Object> flux = Flux.generate(() -> 1, (state, sink) -> {
 			sink.next(state);
-			if(state == 10){
+			if (state == 10) {
 				sink.complete();
 			}
-			return state+1;
+			return state + 1;
 		}).filter(i -> (int)i > 20).doOnTerminate(() -> isTerminated.set(true));
 
-	    // when
+		// when
 		assert !isTerminated.get(); // 현재는 isTerminated가 false
 		StepVerifier.create(flux).verifyComplete(); // flux를 subscribe해도 filter때문에 아무 값을 가지지 않는다.
 
-	    // then
+		// then
 		assert isTerminated.get(); // 하지만 doOnTerminate는 실행되었음
 
 	}
+
 	public static class CharacterCreator {
 		public Consumer<List<Character>> consumer;
 

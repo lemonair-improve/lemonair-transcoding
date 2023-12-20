@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class AwsService {
 	private final AmazonS3 amazonS3;
+	private final
 
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
@@ -43,4 +44,6 @@ public class AwsService {
 		}
 		return key;
 	}
+
+
 }

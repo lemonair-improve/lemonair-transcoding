@@ -7,4 +7,5 @@ upload:
 ffmpeg:
   debug: false
   thumbnail:
-    creation-cycle: 180
+    creation-cycle: 3
+    upload-cycle: 180

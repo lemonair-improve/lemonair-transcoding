@@ -51,17 +51,11 @@ public class TranscodeService {
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
 
-	@Value("${ffmpeg.exe}")
-	private String ffmpegPath;
-
-	@Value("${ffmpeg.ip}")
-	private String inputStreamIp;
-
 	@Value("${ffmpeg.debug}")
 	private boolean ffmpegDebugMode;
 
-	@Value("${ffmpeg.thumbnail.creation-cycle}")
-	private int thumbnailCreationCycle;
+	@Value("${ffmpeg.thumbnail.upload-cycle}")
+	private int thumbnailUploadCycle;
 
 	@PostConstruct
 	void init() {
@@ -149,7 +143,7 @@ public class TranscodeService {
 	private void scheduleThumbnailUploadTask(String userId) {
 		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
 			() -> uploadThumbnailFileToS3(userId),
-			16, thumbnailCreationCycle, TimeUnit.SECONDS
+			16, thumbnailUploadCycle, TimeUnit.SECONDS
 		);
 
 		scheduledTasks.put(userId, scheduledThumbnailTask);

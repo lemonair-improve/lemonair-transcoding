@@ -4,10 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.Buffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -45,12 +41,14 @@ public class ProcessBuilderLearnTest {
 						e.printStackTrace();
 					}
 				}).start();
-			}).block();
+			})
+			.block();
 
 		System.out.println(" 블로킹 되긴 하지만 대기 시간이 없는 경우" + (System.currentTimeMillis() - startTime));
 
 		startTime = System.currentTimeMillis();
-		Mono.fromCallable(() -> powerShellProcess(3000L).start()).subscribeOn(Schedulers.boundedElastic())
+		Mono.fromCallable(() -> powerShellProcess(3000L).start())
+			.subscribeOn(Schedulers.boundedElastic())
 			.doOnSuccess(process -> {
 				new Thread(() -> {
 					try {
@@ -69,7 +67,8 @@ public class ProcessBuilderLearnTest {
 						e.printStackTrace();
 					}
 				}).start();
-			}).block();
+			})
+			.block();
 		System.out.println(" 블로킹되고 대기시간 3초인 경우" + (System.currentTimeMillis() - startTime));
 	}
 
@@ -82,8 +81,9 @@ public class ProcessBuilderLearnTest {
 	}
 
 	@Test
-	void printDetectTest(){
-		Mono.fromCallable(() -> print1to1000Process().start()).subscribeOn(Schedulers.boundedElastic())
+	void printDetectTest() {
+		Mono.fromCallable(() -> print1to1000Process().start())
+			.subscribeOn(Schedulers.boundedElastic())
 			.subscribe(process -> {
 				new Thread(() -> {
 					try {
@@ -103,22 +103,22 @@ public class ProcessBuilderLearnTest {
 	}
 
 	@Test
-	void processOnExitTest(){
+	void processOnExitTest() {
 		try {
 			Mono.fromCallable(print1to1000Process()::start).flatMap(process -> {
-				process.onExit().thenAccept((c)->{
+				process.onExit().thenAccept((c) -> {
 					System.out.println("프로세스 종료 thenAccept 실행");
 				});
 
 				BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 				String line;
 				int sevenCount = 0;
-				while(true){
+				while (true) {
 					try {
 						line = reader.readLine();
-						if(line.contains("7")){
+						if (line.contains("7")) {
 							sevenCount++;
-							System.out.println("탐색 : " +line);
+							System.out.println("탐색 : " + line);
 						}
 					} catch (IOException e) {
 						System.out.println("e = " + e);
@@ -131,17 +131,17 @@ public class ProcessBuilderLearnTest {
 	}
 
 	@Test
-	void processBlockingTest(){
-		Mono.fromCallable( () -> print1to1000Process().start()).flatMap(process -> {
+	void processBlockingTest() {
+		Mono.fromCallable(() -> print1to1000Process().start()).flatMap(process -> {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 			String line;
 			int sevenCount = 0;
-			while(true){
+			while (true) {
 				try {
 					line = reader.readLine();
-					if(line.contains("7")){
+					if (line.contains("7")) {
 						sevenCount++;
-						System.out.println("탐색 : " +line);
+						System.out.println("탐색 : " + line);
 					}
 				} catch (IOException e) {
 					System.out.println("e = " + e);

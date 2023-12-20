@@ -6,9 +6,7 @@ import org.junit.jupiter.api.Test;
 
 public class StreamLearnTest {
 	@Test
-	void streamOf(){
-		Stream.of(new int[]{1,2,3,4})
-			.map(String::valueOf)
-			.forEach(System.out::println);
+	void streamOf() {
+		Stream.of(new int[] {1, 2, 3, 4}).map(String::valueOf).forEach(System.out::println);
 	}
 }

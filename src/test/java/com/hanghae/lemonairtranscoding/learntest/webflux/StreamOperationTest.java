@@ -151,9 +151,7 @@ public class StreamOperationTest {
 	@Test
 	void zipWhen() {
 		// given
-		Mono<String> passwordVerifyMono =
-			getPassword()
-			.zipWhen(this::encryptPassword)
+		Mono<String> passwordVerifyMono = getPassword().zipWhen(this::encryptPassword)
 			.flatMap(tuple -> login(tuple.getT1(), tuple.getT2()));
 		// when
 		// then
@@ -168,18 +166,17 @@ public class StreamOperationTest {
 	 */
 
 	@Test
-	void tupleUtils_function(){
-	    // given
-	    Mono<String> loginMono = Mono.zip(getKey(), getPassword())
-			.flatMap(TupleUtils.function(this::login));
-	    // when
-	    // then
+	void tupleUtils_function() {
+		// given
+		Mono<String> loginMono = Mono.zip(getKey(), getPassword()).flatMap(TupleUtils.function(this::login));
+		// when
+		// then
 		StepVerifier.create(loginMono).expectNext("jwt토큰").verifyComplete();
 	}
 
 	@Test
-	void delayUntil(){
-	    Flux.just(1,2,3,4,5).log().delayUntil(i -> Flux.just(i * 10)).log().subscribe();
+	void delayUntil() {
+		Flux.just(1, 2, 3, 4, 5).log().delayUntil(i -> Flux.just(i * 10)).log().subscribe();
 		// log를 찍어보면 ConcatMapNoPrefetch 클래스가 onNext를 호출하며 이전에 요청받은 데이터를 처리하고나서 새로운 요소를 요청한다.
 	}
 
@@ -199,7 +196,5 @@ public class StreamOperationTest {
 	private Mono<String> getPassword() {
 		return Mono.just("qwer1234");
 	}
-
-
 
 }

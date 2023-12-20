@@ -96,7 +96,12 @@ public class TranscodeService {
 	}
 
 	private String extractSavedFilePathInLog(String log) {
-		return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
+		try{
+			return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
+		} catch( Exception e) {
+			TranscodeService.log.error(e.toString());
+			return "";
+		}
 	}
 
 	private String removeTmpInFilename(String filename) {

@@ -92,7 +92,7 @@ public class TranscodeService {
 	}
 
 	private void UploadToAws(Flux<String> logLines) {
-		logLines.publishOn(awsUploadScheduler).map(this::uploadVideoFilesToS3).log().subscribe();
+		logLines.publishOn(awsUploadScheduler).doOnNext(this::uploadVideoFilesToS3).log().subscribe();
 	}
 
 	private String extractSavedFilePathInLog(String log) {
@@ -133,7 +133,7 @@ public class TranscodeService {
 
 	private void scheduleThumbnailUploadTask(String userId) {
 		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
-			() -> uploadThumbnailFileToS3(userId), 16, thumbnailUploadCycle, TimeUnit.SECONDS);
+			() -> uploadThumbnailFileToS3(userId), 5, thumbnailUploadCycle, TimeUnit.SECONDS);
 
 		scheduledTasks.put(userId, scheduledThumbnailTask);
 	}
@@ -148,13 +148,13 @@ public class TranscodeService {
 		awsService.uploadToS3Async(filePath);
 	}
 
-	private String uploadVideoFilesToS3(String filePath) {
+	private void uploadVideoFilesToS3(String filePath) {
 		try {
 			Thread.sleep(100L);
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
 		}
-		return awsService.uploadToS3Async(filePath);
+		awsService.uploadToS3Async(filePath);
 	}
 
 	public Mono<Boolean> endBroadcast(String userId) {

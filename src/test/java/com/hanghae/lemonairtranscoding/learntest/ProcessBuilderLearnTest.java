@@ -80,27 +80,27 @@ public class ProcessBuilderLearnTest {
 		return processBuilder;
 	}
 
-	@Test
-	void printDetectTest() {
-		Mono.fromCallable(() -> print1to1000Process().start())
-			.subscribeOn(Schedulers.boundedElastic())
-			.subscribe(process -> {
-				new Thread(() -> {
-					try {
-						InputStream inputStream = process.getInputStream();
-						BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-						String line;
-						while (true) {
-							line = reader.readLine();
-							System.out.println(line);
-						}
-					} catch (IOException e) {
-						e.printStackTrace();
-					}
-				}).start();
-
-			});
-	}
+	// @Test
+	// void printDetectTest() {
+	// 	Mono.fromCallable(() -> print1to1000Process().start())
+	// 		.subscribeOn(Schedulers.boundedElastic())
+	// 		.subscribe(process -> {
+	// 			new Thread(() -> {
+	// 				try {
+	// 					InputStream inputStream = process.getInputStream();
+	// 					BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+	// 					String line;
+	// 					while (true) {
+	// 						line = reader.readLine();
+	// 						System.out.println(line);
+	// 					}
+	// 				} catch (IOException e) {
+	// 					e.printStackTrace();
+	// 				}
+	// 			}).start();
+	//
+	// 		});
+	// }
 
 	@Test
 	void processOnExitTest() {

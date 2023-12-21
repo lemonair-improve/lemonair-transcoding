@@ -265,9 +265,8 @@ public class MonoFlux_Basic {
 				sink.complete();
 			}
 			return state + 1;
-		});
+		}).take(3).cast(Character.class);
 
-		characterFlux.take(3);
 		System.out.println("flux take는 구독자의 입장에서 n개의 항목만 요청하기위해서 사용한다.");
 		StepVerifier.create(characterFlux).expectNext('a', 'b', 'c').expectComplete().verify();
 

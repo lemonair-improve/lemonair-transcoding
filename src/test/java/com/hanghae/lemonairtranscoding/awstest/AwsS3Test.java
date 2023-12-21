@@ -26,17 +26,17 @@ public class AwsS3Test {
 	@Value("${aws.s3.bucket}")
 	private String bucket;
 
-	@Test
-	void uploadFileSyncTest() {
-		File file = new File("C:\\Users\\sbl\\Desktop\\uploadtest.txt.txt");
-		s3SyncClient.putObject(bucket, "sbl/sm2", file);
-	}
-
-	@Test
-	void uploadFileSyncTest2() {
-		File file = new File("C:\\Users\\sbl\\Desktop\\uploadtest.txt.txt");
-		s3SyncClient.putObject(bucket, "lyulbyung/videos", file);
-	}
+	// @Test
+	// void uploadFileSyncTest() {
+	// 	File file = new File("C:\\Users\\sbl\\Desktop\\uploadtest.txt.txt");
+	// 	s3SyncClient.putObject(bucket, "sbl/sm2", file);
+	// }
+	//
+	// @Test
+	// void uploadFileSyncTest2() {
+	// 	File file = new File("C:\\Users\\sbl\\Desktop\\uploadtest.txt.txt");
+	// 	s3SyncClient.putObject(bucket, "lyulbyung/videos", file);
+	// }
 
 	/**
 	 * cache-control 값은 PutObjectRequest.Builder에서 build 메서드를 제공하고있기 때문에
@@ -67,17 +67,17 @@ public class AwsS3Test {
 		System.out.println(metadata.getUserMetadata());
 	}
 
-	@Test
-	void checkFiles() {
-		S3Object s3Object = s3SyncClient.getObject(bucket, "sbl/sm2");
-		System.out.println("s3Object.getObjectContent().toString() = " + s3Object.getObjectContent().toString());
-	}
+	// @Test
+	// void checkFiles() {
+	// 	S3Object s3Object = s3SyncClient.getObject(bucket, "sbl/sm2");
+	// 	System.out.println("s3Object.getObjectContent().toString() = " + s3Object.getObjectContent().toString());
+	// }
 
-	@Test
-	void checkVideo() {
-		S3Object s3Object = s3SyncClient.getObject(bucket, "lyulbyung/videos/lyulbyung.m3u8");
-		System.out.println("s3Object.getObjectContent().toString() = " + s3Object.getObjectContent().toString());
-	}
+	// @Test
+	// void checkVideo() {
+	// 	S3Object s3Object = s3SyncClient.getObject(bucket, "lyulbyung/videos/lyulbyung.m3u8");
+	// 	System.out.println("s3Object.getObjectContent().toString() = " + s3Object.getObjectContent().toString());
+	// }
 
 	@Test
 	void uploadFileWithNoCacheMetadata() {

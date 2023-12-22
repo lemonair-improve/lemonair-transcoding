@@ -21,7 +21,7 @@ public class TranscodeController {
 		return transcodeService.startTranscoding(userId);
 	}
 
-	@GetMapping("/offair/{streamerId}")
+	@GetMapping("/{streamerId}/offair")
 	Mono<Boolean> endBroadcast(@PathVariable String streamerId) {
 		return transcodeService.endBroadcast(streamerId);
 	}

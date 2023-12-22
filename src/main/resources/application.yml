@@ -6,4 +6,4 @@ spring:
     include:
       - common
       - secret
-    active: local
+    active: deploy

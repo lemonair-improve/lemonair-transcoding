@@ -1,0 +1,7 @@
+ffmpeg:
+  exe:
+    "/usr/bin/ffmpeg"
+  ip:
+    "rtmp://rtmp.lemonair.me:1935"
+  output:
+    directory: /ffmpegoutput

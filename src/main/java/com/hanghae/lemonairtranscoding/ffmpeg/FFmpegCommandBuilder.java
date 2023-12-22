@@ -143,7 +143,7 @@ public class FFmpegCommandBuilder {
 	}
 
 	private void getVideoSavePath(String name){
-		command.append(getOrCreateVideoPath(name)).append('\\');
+		command.append(getOrCreateVideoPath(name)).append('/');
 	}
 	public FFmpegCommandBuilder setM3U8FileName(String name){
 		getVideoSavePath(name);
@@ -165,12 +165,12 @@ public class FFmpegCommandBuilder {
 		switch(strategy){
 			case THUMBNAIL_CREATE_STRATEGY_UPDATE -> {
 				command.append("-update 1").append(' ').append(getOrCreateThumbnailPath(userId));
-				command.append('\\').append(userId).append("_thumbnail").append(".jpg").append(' ');
+				command.append('/').append(userId).append("_thumbnail").append(".jpg").append(' ');
 			}
 
 			case THUMBNAIL_CREATE_STRATEGY_SEQUENCE -> {
 				command.append(getOrCreateThumbnailPath(userId));
-				command.append('\\').append(userId).append("_thumbnail").append(POSTFIX_SEQUENCE).append(".jpg").append(' ');
+				command.append('/').append(userId).append("_thumbnail").append(POSTFIX_SEQUENCE).append(".jpg").append(' ');
 			}
 		}
 		return this;

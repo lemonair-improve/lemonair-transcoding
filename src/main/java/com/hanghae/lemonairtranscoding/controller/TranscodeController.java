@@ -17,7 +17,7 @@ public class TranscodeController {
 	private final TranscodeService transcodeService;
 
 	@GetMapping("/{streamerId}")
-	Mono<Long> startTransCoding(@PathVariable("streamerId") String userId){
+	Mono<Long> startTransCoding(@PathVariable("streamerId") String userId) {
 		return transcodeService.startTranscoding(userId);
 	}
 
@@ -25,4 +25,6 @@ public class TranscodeController {
 	Mono<Boolean> endBroadcast(@PathVariable String streamerId) {
 		return transcodeService.endBroadcast(streamerId);
 	}
+
 }
+

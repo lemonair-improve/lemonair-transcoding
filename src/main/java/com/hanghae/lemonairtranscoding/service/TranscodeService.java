@@ -73,9 +73,11 @@ public class TranscodeService {
 		} catch (IOException ex) {
 			throw new RuntimeException(ex);
 		}
+
 		UploadToAws(filterFileSavedLog(process));
 		scheduleThumbnailUploadTask(userId);
-		return Mono.just(1L);
+
+		return Mono.just(process.pid());
 	}
 
 	private Process startFFmpegProcess(String userId) throws IOException {
@@ -96,7 +98,12 @@ public class TranscodeService {
 	}
 
 	private String extractSavedFilePathInLog(String log) {
-		return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
+		try{
+			return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
+		} catch( Exception e) {
+			TranscodeService.log.error(e.toString());
+			return "";
+		}
 	}
 
 	private String removeTmpInFilename(String filename) {
@@ -162,6 +169,7 @@ public class TranscodeService {
 		if (scheduledThumbnailTask != null && !scheduledThumbnailTask.isDone()) {
 			scheduledThumbnailTask.cancel(false);
 			scheduledTasks.remove(userId);
+			log.info(userId + "의 유저의 방송 종료로 썸네일 업로드 Task remove");
 		}
 		return Mono.just(true);
 	}

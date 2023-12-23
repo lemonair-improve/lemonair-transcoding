@@ -40,6 +40,7 @@ public class AwsService {
 		} else {
 			putObjectRequest = buildPutObjectRequest(key);
 		}
+		// 234 ms 정도 걸림
 		upload(putObjectRequest, filePath, key).thenAccept(log::info);
 	}
 

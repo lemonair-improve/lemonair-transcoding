@@ -65,6 +65,7 @@ public class TranscodeService {
 	}
 
 	public Mono<Long> startTranscoding(String userId) {
+		log.info("트랜스코딩 요청 userId : " + userId);
 		List<String> uploadedFiles = new ArrayList<>();
 		// localFileCleaner.setDeleteOldFileTaskSchedule(userId);
 		Process process = null;

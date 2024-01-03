@@ -41,7 +41,12 @@ public class AwsService {
 			putObjectRequest = buildPutObjectRequest(key);
 		}
 		// 234 ms 정도 걸림
-		upload(putObjectRequest, filePath, key).thenAccept(log::info);
+		try {
+			Thread.sleep(234);
+		} catch (InterruptedException e) {
+			log.error("aws 업로드 대신 sleep하는 구문에서 : " + e);
+		}
+		// upload(putObjectRequest, filePath, key).thenAccept(log::info);
 	}
 
 	/**

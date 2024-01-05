@@ -59,9 +59,9 @@ public class TranscodeService {
 
 	@PostConstruct
 	void init() {
-		ffmpegLogReaderScheduler = Schedulers.newBoundedElastic(1, 10, "ffmpeg 로그 감시");
+		ffmpegLogReaderScheduler = Schedulers.newBoundedElastic(100, 10, "ffmpeg 로그 감시");
 		awsUploadScheduler = Schedulers.newBoundedElastic(10, 10, "aws upload");
-		ffmpegProcessScheduler = Schedulers.newBoundedElastic(1, 10, "FFmpeg 커맨드 실행");
+		ffmpegProcessScheduler = Schedulers.newBoundedElastic(10, 10, "FFmpeg 커맨드 실행");
 	}
 
 	public Mono<Long> startTranscoding(String userId) {

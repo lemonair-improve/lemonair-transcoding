@@ -112,7 +112,7 @@ public class FFmpegCommandBuilder {
 	}
 
 	public FFmpegCommandBuilder setSegmentUnitTime(int second){
-		command.append("-hls_flags split_by_time").append(' ');
+		command.append("-hls_flags independent_segments").append(' ');
 		command.append("-hls_time").append(' ').append(second).append(' ');
 		return this;
 	}
@@ -230,7 +230,7 @@ public class FFmpegCommandBuilder {
 			.setAudioCodec(AUDIO_AAC)
 			.createVTTFile(false)
 			.useTempFileWriting(false)
-			.setSegmentUnitTime(2)
+			.setSegmentUnitTime(4)
 			.setSegmentListSize(SEGMENTLIST_ALL)
 			.setSegmentFileName(userId)
 			.timeStampFileNaming(true)

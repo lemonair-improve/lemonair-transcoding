@@ -8,7 +8,7 @@
 ## 소개 영상
 
 
-![readme_fps5_color64](https://github.com/lem-onair/lemonair-FE/assets/93697934/a6b0f0fe-c03a-43c7-9190-c84b8286397f)
+![lemonair-architecture](https://github.com/lem-onair/lemonair-transcoding/assets/93697934/894eb85c-7c6a-4c60-a01a-d5547a41440a)
 
 
 https://youtu.be/gUTpnhFRUK8

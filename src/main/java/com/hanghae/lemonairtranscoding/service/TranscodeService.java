@@ -1,13 +1,13 @@
 package com.hanghae.lemonairtranscoding.service;
 
+import static com.hanghae.lemonairtranscoding.util.ThreadSchedulers.*;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,34 +19,28 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.hanghae.lemonairtranscoding.exception.ErrorCode;
+import com.hanghae.lemonairtranscoding.exception.ExpectedException;
 import com.hanghae.lemonairtranscoding.ffmpeg.FFmpegCommandBuilder;
-import com.hanghae.lemonairtranscoding.util.LocalFileCleaner;
+import com.hanghae.lemonairtranscoding.util.FutureUtil;
 
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class TranscodeService {
 
-	private final LocalFileCleaner localFileCleaner;
 	private final FFmpegCommandBuilder fFmpegCommandBuilder;
 	private final AwsService awsService;
 	private final String PREFIX_SAVED_FILE_LOG = "[hls";
 	private final String POSTFIX_TEMP_FILE_EXTENSION = ".tmp";
-
 	private final ScheduledExecutorService thumbnailUploadExecutorService = Executors.newSingleThreadScheduledExecutor();
-	Scheduler ffmpegLogReaderScheduler;
-	Scheduler awsUploadScheduler;
-	Scheduler ffmpegProcessScheduler;
-
-	private Map<String, ScheduledFuture<?>> scheduledTasks = new HashMap<>();
+	private final Map<String, ScheduledFuture<?>> scheduledTasks = new HashMap<>();
 
 	@Value("${ffmpeg.output.directory}")
 	private String outputPath;
@@ -57,54 +51,55 @@ public class TranscodeService {
 	@Value("${ffmpeg.thumbnail.upload-cycle}")
 	private int thumbnailUploadCycle;
 
-	@PostConstruct
-	void init() {
-		ffmpegLogReaderScheduler = Schedulers.newBoundedElastic(100, 10, "ffmpeg 로그 감시");
-		awsUploadScheduler = Schedulers.newBoundedElastic(10, 10, "aws upload");
-		ffmpegProcessScheduler = Schedulers.newBoundedElastic(10, 10, "FFmpeg 커맨드 실행");
-	}
-
-	public Mono<Long> startTranscoding(String userId) {
-		log.info("트랜스코딩 요청 userId : " + userId);
-		List<String> uploadedFiles = new ArrayList<>();
+	public Mono<Boolean> startTranscoding(String userId) {
 		// localFileCleaner.setDeleteOldFileTaskSchedule(userId);
-		Process process = null;
-		try {
-			process = startFFmpegProcess(userId);
-		} catch (IOException ex) {
-			throw new RuntimeException(ex);
-		}
-
-		UploadToAws(filterFileSavedLog(process));
-		scheduleThumbnailUploadTask(userId);
-
-		return Mono.just(process.pid());
+		return Mono.just(userId)
+			.flatMap(this::startFFmpegProcess)
+			.doOnNext(this::filterFileSavedLog)
+			.then(scheduleThumbnailUploadTask(userId))
+			.log("리턴하는거?")
+			.thenReturn(true);
 	}
 
-	private Process startFFmpegProcess(String userId) throws IOException {
-		return getDefaultFFmpegProcessBuilder(userId).start();
+	private Mono<Process> startFFmpegProcess(String userId) {
+		return buildTranscodingProcess(userId, fFmpegCommandBuilder.getDefaultCommand(userId)).log("ffmpeg 프로세스 시작")
+			.publishOn(IO.scheduler())
+			.handle((processBuilder, sink) -> {
+				try {
+					sink.next(processBuilder.start());
+				} catch (IOException e) {
+					sink.error(new ExpectedException(ErrorCode.TranscodingProcessNotStarted));
+				}
+			});
 	}
 
-	private Flux<String> filterFileSavedLog(Process process) {
+	private Disposable filterFileSavedLog(Process process) {
 		return Flux.fromStream(() -> new BufferedReader(new InputStreamReader(process.getInputStream())).lines())
-			.publishOn(ffmpegLogReaderScheduler)
+			.subscribeOn(IO.scheduler())
+			.publishOn(COMPUTE.scheduler())
+			.log("로그들")
 			.filter(line -> line.startsWith(PREFIX_SAVED_FILE_LOG))
 			.map(this::extractSavedFilePathInLog)
 			.map(this::removeTmpInFilename)
-			.log();
+			.publishOn(IO.scheduler())
+			.doOnNext(
+				filePath -> FutureUtil.setUpFuture(() -> awsService.uploadToS3Async(filePath), "청크 업로드 성공" + filePath,
+					"청크 업로드 실패 " + filePath, 3, 100))
+			.subscribe();
 	}
 
-	private void UploadToAws(Flux<String> logLines) {
-		logLines.publishOn(awsUploadScheduler).doOnNext(this::uploadVideoFilesToS3).log().subscribe();
+	private Mono<Void> scheduleThumbnailUploadTask(String userId) {
+		String filePath = String.format("%s/%s/thumbnail/%s_thumbnail.jpg", outputPath, userId, userId);
+		return Mono.fromRunnable(() -> {
+			ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
+				() -> FutureUtil.setUpFuture(() -> awsService.uploadToS3Async(filePath), "썸네일 업로드 성공" + filePath,
+					"썸네일 업로드 실패 " + filePath, 5, 1000), 4, thumbnailUploadCycle, TimeUnit.SECONDS);
+			scheduledTasks.put(userId, scheduledThumbnailTask);
+		});
 	}
 
 	private String extractSavedFilePathInLog(String log) {
-		try{
-			return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
-		} catch( Exception e) {
-			TranscodeService.log.error(e.toString());
-			return "";
-		}
+		return log.substring(log.indexOf('\'') + 1, log.lastIndexOf('\''));
 	}
 
 	private String removeTmpInFilename(String filename) {
@@ -112,66 +107,38 @@ public class TranscodeService {
 			filename.substring(0, filename.length() - POSTFIX_TEMP_FILE_EXTENSION.length()) : filename;
 	}
 
-	private ProcessBuilder getDefaultFFmpegProcessBuilder(String userId) {
-		List<String> ffmpegCommand = fFmpegCommandBuilder.getDefaultCommand(userId);
-		return getTranscodingProcess(userId, ffmpegCommand);
-	}
-
-	private ProcessBuilder getTranscodingProcess(String owner, List<String> splitCommand) {
-		Path directory = Paths.get(outputPath).resolve(owner);
-		// 경로가 폴더인지 확인
-		if (!Files.exists(Paths.get(outputPath))) {
-			try {
-				Files.createDirectory(Paths.get(outputPath));
-			} catch (IOException e) {
-				log.error("e :" + e);
+	private Mono<ProcessBuilder> buildTranscodingProcess(String owner, List<String> splitCommand) {
+		return Mono.just(Paths.get(outputPath).resolve(owner)).subscribeOn(IO.scheduler()).flatMap(path -> {
+			if (!Files.exists(path)) {
+				try {
+					Files.createDirectory(path);
+				} catch (IOException e) {
+					return Mono.error(new ExpectedException(ErrorCode.CannotCreateStreamerDirectory));
+				}
 			}
-		}
-		ProcessBuilder processBuilder = new ProcessBuilder();
-		processBuilder.command(splitCommand);
-		processBuilder.redirectErrorStream(true);
-		processBuilder.directory(new File(directory.toAbsolutePath().toString()));
-
-		if (ffmpegDebugMode) {
-			processBuilder.inheritIO();
-		}
-
-		return processBuilder;
-	}
-
-	private void scheduleThumbnailUploadTask(String userId) {
-		ScheduledFuture<?> scheduledThumbnailTask = thumbnailUploadExecutorService.scheduleAtFixedRate(
-			() -> uploadThumbnailFileToS3(userId), 5, thumbnailUploadCycle, TimeUnit.SECONDS);
-
-		scheduledTasks.put(userId, scheduledThumbnailTask);
-	}
-
-	private void uploadThumbnailFileToS3(String userId) {
-		String filePath = outputPath + "/" + userId + "/thumbnail" + "/" + userId + "_thumbnail.jpg";
-		if (!Files.exists(Paths.get(filePath))) {
-			log.info(filePath + " 해당 썸네일 파일 없음");
-			return;
-		}
-
-		awsService.uploadToS3Async(filePath);
-	}
-
-	private void uploadVideoFilesToS3(String filePath) {
-		try {
-			Thread.sleep(100L);
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
-		}
-		awsService.uploadToS3Async(filePath);
+			return Mono.just(path);
+		}).log("processbuilder").flatMap(directory -> Mono.just(new ProcessBuilder()).doOnNext(processBuilder -> {
+			processBuilder.command(splitCommand);
+			processBuilder.redirectErrorStream(true);
+			processBuilder.directory(new File(directory.toAbsolutePath().toString()));
+			if (ffmpegDebugMode) {
+				processBuilder.inheritIO();
+			}
+		}));
 	}
 
 	public Mono<Boolean> endBroadcast(String userId) {
-		ScheduledFuture<?> scheduledThumbnailTask = scheduledTasks.get(userId);
-		if (scheduledThumbnailTask != null && !scheduledThumbnailTask.isDone()) {
-			scheduledThumbnailTask.cancel(false);
+		return Mono.fromCallable(() -> {
+			if (!scheduledTasks.containsKey(userId)) {
+				return true;
+			}
+			ScheduledFuture<?> scheduledFuture = scheduledTasks.get(userId);
+			if (scheduledFuture != null) {
+				scheduledFuture.cancel(false);
+			}
 			scheduledTasks.remove(userId);
-			log.info(userId + "의 유저의 방송 종료로 썸네일 업로드 Task remove");
-		}
-		return Mono.just(true);
+			log.info(userId + "의 썸네일 업로드 task 종료");
+			return true;
+		});
 	}
 }
